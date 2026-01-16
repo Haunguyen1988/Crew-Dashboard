@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Uploads (contains user data)
+uploads/
+
+# Local development
+.env
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Agent config
+.agent/
+.shared/
+ui-ux-pro-max-skill/

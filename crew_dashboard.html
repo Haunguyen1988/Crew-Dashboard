@@ -1,0 +1,1426 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crew Management Dashboard - VietJet Air</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: rgba(30, 41, 59, 0.8);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-purple: #8b5cf6;
+            --accent-green: #22c55e;
+            --accent-yellow: #eab308;
+            --accent-red: #ef4444;
+            --accent-cyan: #06b6d4;
+            --border-color: rgba(148, 163, 184, 0.2);
+            --glass-bg: rgba(255, 255, 255, 0.05);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #1a1a2e 50%, var(--bg-primary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Background animation */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background:
+                radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* Header */
+        .header {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .logo-text {
+            font-size: 1.25rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .base-selector {
+            display: flex;
+            gap: 8px;
+        }
+
+        .base-btn {
+            padding: 8px 16px;
+            border: 1px solid var(--border-color);
+            background: var(--glass-bg);
+            color: var(--text-secondary);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .base-btn.active {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            color: white;
+            border-color: transparent;
+        }
+
+        .base-btn:hover:not(.active) {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+
+        .datetime {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        /* Main Content */
+        .main-content {
+            padding: 2rem;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* Section Titles */
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 16px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            border-radius: 2px;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Grid Layouts */
+        .executive-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .two-column-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        /* Metric Cards */
+        .metric-card {
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-label {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .metric-trend {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 0.5rem;
+            font-size: 0.75rem;
+            padding: 4px 8px;
+            border-radius: 12px;
+        }
+
+        .metric-trend.up {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--accent-green);
+        }
+
+        .metric-trend.down {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--accent-red);
+        }
+
+        /* Gauge Container */
+        .gauge-container {
+            position: relative;
+            width: 100%;
+            max-width: 200px;
+            margin: 0 auto;
+        }
+
+        .gauge-value {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .gauge-value .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent-green);
+        }
+
+        .gauge-value .label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        /* Alert Badges */
+        .alert-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .alert-badge {
+            text-align: center;
+            padding: 1rem;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .alert-badge.green {
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .alert-badge.yellow {
+            background: rgba(234, 179, 8, 0.15);
+            border: 1px solid rgba(234, 179, 8, 0.3);
+        }
+
+        .alert-badge.red {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .alert-count {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .alert-badge.green .alert-count {
+            color: var(--accent-green);
+        }
+
+        .alert-badge.yellow .alert-count {
+            color: var(--accent-yellow);
+        }
+
+        .alert-badge.red .alert-count {
+            color: var(--accent-red);
+        }
+
+        .alert-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+
+        /* Progress Bars */
+        .progress-item {
+            margin-bottom: 1rem;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        .progress-fill.green {
+            background: linear-gradient(90deg, var(--accent-green), #4ade80);
+        }
+
+        .progress-fill.yellow {
+            background: linear-gradient(90deg, var(--accent-yellow), #fcd34d);
+        }
+
+        .progress-fill.red {
+            background: linear-gradient(90deg, var(--accent-red), #f87171);
+        }
+
+        /* Data Table */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .data-table th {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .data-table tbody tr {
+            transition: background 0.2s ease;
+        }
+
+        .data-table tbody tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Status Indicators */
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .status-dot.green {
+            background: var(--accent-green);
+        }
+
+        .status-dot.yellow {
+            background: var(--accent-yellow);
+        }
+
+        .status-dot.red {
+            background: var(--accent-red);
+        }
+
+        /* Base Heatmap */
+        .base-heatmap {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+
+        .heatmap-item {
+            text-align: center;
+            padding: 1.5rem;
+            border-radius: 12px;
+            background: var(--glass-bg);
+            border: 1px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .heatmap-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+        }
+
+        .heatmap-item.high::before {
+            background: var(--accent-green);
+        }
+
+        .heatmap-item.medium::before {
+            background: var(--accent-yellow);
+        }
+
+        .heatmap-item.low::before {
+            background: var(--accent-red);
+        }
+
+        .heatmap-code {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .heatmap-value {
+            font-size: 2rem;
+            font-weight: 600;
+        }
+
+        .heatmap-item.high .heatmap-value {
+            color: var(--accent-green);
+        }
+
+        .heatmap-item.medium .heatmap-value {
+            color: var(--accent-yellow);
+        }
+
+        .heatmap-item.low .heatmap-value {
+            color: var(--accent-red);
+        }
+
+        .heatmap-detail {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
+
+        /* Ratio Cards */
+        .ratio-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: var(--glass-bg);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+
+        .ratio-label {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .ratio-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .ratio-value.good {
+            color: var(--accent-green);
+        }
+
+        .ratio-value.warning {
+            color: var(--accent-yellow);
+        }
+
+        .ratio-value.danger {
+            color: var(--accent-red);
+        }
+
+        /* Alert List */
+        .alert-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .alert-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0.75rem;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .alert-item .icon {
+            color: var(--accent-red);
+            font-size: 1rem;
+        }
+
+        /* Chart Container */
+        .chart-container {
+            position: relative;
+            height: 200px;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .executive-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .two-column-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .executive-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .base-heatmap {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Loading Animation */
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .loading {
+            animation: pulse 2s infinite;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--accent-blue);
+            border-radius: 3px;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">✈</div>
+            <span class="logo-text">CREW MANAGEMENT DASHBOARD</span>
+        </div>
+        <div class="header-right">
+            <button class="base-btn" onclick="openUploadModal()"
+                style="background: linear-gradient(135deg, var(--accent-green), #4ade80);">
+                📂 Upload CSV
+            </button>
+            <button class="base-btn" onclick="refreshData()" style="background: var(--accent-blue);">
+                🔄 Refresh
+            </button>
+            <div class="base-selector">
+                <button class="base-btn active" data-base="all">ALL</button>
+                <button class="base-btn" data-base="sgn">SGN</button>
+                <button class="base-btn" data-base="han">HAN</button>
+                <button class="base-btn" data-base="dad">DAD</button>
+            </div>
+            <div class="datetime">
+                <div id="current-date">15/01/2026</div>
+                <div id="current-time">15:00</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Upload Modal -->
+    <div id="uploadModal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; overflow-y: auto;">
+        <div
+            style="background: var(--bg-secondary); padding: 2rem; border-radius: 16px; max-width: 600px; width: 90%; border: 1px solid var(--border-color); margin: 2rem auto;">
+            <h3 style="margin-bottom: 1.5rem; color: var(--text-primary);">📂 Upload CSV Data</h3>
+
+            <div style="margin-bottom: 1.5rem;">
+                <label
+                    style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">DayRepReport
+                    CSV</label>
+                <input type="file" id="dayrepFile" accept=".csv"
+                    style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);">
+            </div>
+
+            <div style="margin-bottom: 1.5rem;">
+                <label
+                    style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">SacutilReport
+                    CSV (Aircraft Utilization)</label>
+                <input type="file" id="sacutilFile" accept=".csv"
+                    style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);">
+            </div>
+
+            <div style="margin-bottom: 1.5rem;">
+                <label
+                    style="display: block; margin-bottom: 0.5rem; color: var(--accent-yellow); font-size: 0.875rem; font-weight: 600;">📊
+                    RolCrTotReport
+                    CSV (Rolling 28-day/365-day Block Hours)</label>
+                <input type="file" id="rolcrtotFile" accept=".csv"
+                    style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);">
+                <small style="color: var(--text-secondary); font-size: 0.75rem;">Rolling crew hours totals report for
+                    flight hour limits tracking</small>
+            </div>
+
+            <div style="margin-bottom: 1.5rem;">
+                <label
+                    style="display: block; margin-bottom: 0.5rem; color: var(--accent-cyan); font-size: 0.875rem; font-weight: 600;">👥
+                    Crew Schedule
+                    CSV (Standby, Sick-call, Fatigue)</label>
+                <input type="file" id="crewScheduleFile" accept=".csv"
+                    style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);">
+                <small style="color: var(--text-secondary); font-size: 0.75rem;">Crew schedule with SL, CSL, SBY, OSBY
+                    status codes</small>
+            </div>
+
+            <div id="uploadStatus" style="margin-bottom: 1rem; padding: 0.75rem; border-radius: 8px; display: none;">
+            </div>
+
+            <div style="display: flex; gap: 1rem;">
+                <button onclick="uploadFiles()"
+                    style="flex: 1; padding: 0.75rem; background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple)); border: none; border-radius: 8px; color: white; font-weight: 600; cursor: pointer;">
+                    ⬆️ Upload & Process
+                </button>
+                <button onclick="closeUploadModal()"
+                    style="padding: 0.75rem 1.5rem; background: transparent; border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-secondary); cursor: pointer;">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Executive Summary Section -->
+        <section class="section-title">Executive Summary</section>
+        <div class="executive-grid">
+            <div class="card metric-card">
+                <div class="metric-value">84</div>
+                <div class="metric-label">Total Aircraft Flying</div>
+                <span class="metric-trend up">REGs operating today</span>
+            </div>
+            <div class="card metric-card">
+                <div class="metric-value">424</div>
+                <div class="metric-label">Total Flights</div>
+                <span class="metric-trend up">▲ +12% vs yesterday</span>
+            </div>
+            <div class="card metric-card">
+                <div class="metric-value">1,495</div>
+                <div class="metric-label">Total Crew Operating</div>
+                <span class="metric-trend">CP: 217 | FO: 212 | PU: 213 | FA: 843</span>
+            </div>
+            <div class="card metric-card">
+                <div class="metric-value">13.6h</div>
+                <div class="metric-label">Avg Flight Hours/Aircraft</div>
+                <span class="metric-trend up">Total: 1,085h</span>
+            </div>
+        </div>
+
+        <!-- Second Row - Charts -->
+        <div class="executive-grid" style="margin-top: 1.5rem;">
+            <div class="card metric-card">
+                <div class="gauge-container">
+                    <canvas id="utilizationGauge" width="200" height="200"></canvas>
+                    <div class="gauge-value">
+                        <div class="value">87.5%</div>
+                        <div class="label">Utilization</div>
+                    </div>
+                </div>
+            </div>
+            <div class="card metric-card">
+                <div class="chart-container">
+                    <canvas id="crewDistribution"></canvas>
+                </div>
+                <div class="metric-label" style="margin-top: 0.5rem;">Crew Distribution</div>
+            </div>
+            <div class="card metric-card">
+                <div class="metric-value" style="color: var(--accent-yellow);">113</div>
+                <div class="metric-label">Multi-REG Crew</div>
+                <span class="metric-trend">Crew flying 2+ aircraft</span>
+            </div>
+            <div class="card metric-card">
+                <div class="metric-value">1,085h</div>
+                <div class="metric-label">Total Block Hours</div>
+                <span class="metric-trend up">▲ +8.2%</span>
+            </div>
+        </div>
+
+        <!-- Two Column Layout -->
+        <div class="two-column-grid">
+            <!-- Safety & Compliance -->
+            <div>
+                <section class="section-title">Safety & Compliance</section>
+                <div class="card">
+                    <!-- Alert Summary -->
+                    <div class="alert-grid" id="alertGrid">
+                        <div class="alert-badge green">
+                            <div class="alert-count" id="alertNormal">285</div>
+                            <div class="alert-label">Normal</div>
+                        </div>
+                        <div class="alert-badge yellow">
+                            <div class="alert-count" id="alertWarning">12</div>
+                            <div class="alert-label">Warning >85%</div>
+                        </div>
+                        <div class="alert-badge red">
+                            <div class="alert-count" id="alertCritical">3</div>
+                            <div class="alert-label">Critical >95%</div>
+                        </div>
+                    </div>
+
+                    <!-- Flight Hour Limits -->
+                    <h4 style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.875rem;">28-Day Flight
+                        Hour Limits</h4>
+
+                    <div class="progress-item">
+                        <div class="progress-header">
+                            <span>LAM NGOC VU (CP)</span>
+                            <span style="color: var(--accent-yellow);">94:16 / 100h (94%)</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill yellow" style="width: 94%"></div>
+                        </div>
+                    </div>
+
+                    <div class="progress-item">
+                        <div class="progress-header">
+                            <span>ALEX YUNIAR CHAERUDIN (CP)</span>
+                            <span style="color: var(--accent-yellow);">92:55 / 100h (93%)</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill yellow" style="width: 93%"></div>
+                        </div>
+                    </div>
+
+                    <div class="progress-item">
+                        <div class="progress-header">
+                            <span>GAURAV DHAKA (CP)</span>
+                            <span style="color: var(--accent-yellow);">91:21 / 100h (91%)</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill yellow" style="width: 91%"></div>
+                        </div>
+                    </div>
+
+                    <div class="progress-item">
+                        <div class="progress-header">
+                            <span>GRIVTSOV OLEG (CP)</span>
+                            <span style="color: var(--accent-yellow);">90:14 / 100h (90%)</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill yellow" style="width: 90%"></div>
+                        </div>
+                    </div>
+
+                    <div class="progress-item">
+                        <div class="progress-header">
+                            <span>NGUYEN LINH AN (FO)</span>
+                            <span style="color: var(--accent-yellow);">92:42 / 100h (93%)</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill yellow" style="width: 93%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top 20 High-Intensity Crew -->
+                <div class="card" style="margin-top: 1.5rem;">
+                    <h4 style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.875rem;">Top 20
+                        High-Intensity Crew (Rolling 28 Days)</h4>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>28-Day Hours</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rollingHoursTableBody">
+                            <tr>
+                                <td>1</td>
+                                <td>18159</td>
+                                <td>AKBAR MUHAMMAD ALVIN</td>
+                                <td>96:31</td>
+                                <td><span class="status-dot red"></span>Critical</td>
+                            </tr>
+                            <tr>
+                                <td>2</td>
+                                <td>18573</td>
+                                <td>GUND DHRUV</td>
+                                <td>96:54</td>
+                                <td><span class="status-dot red"></span>Critical</td>
+                            </tr>
+                            <tr>
+                                <td>3</td>
+                                <td>18253</td>
+                                <td>GAMULIN MAXIM</td>
+                                <td>96:02</td>
+                                <td><span class="status-dot red"></span>Critical</td>
+                            </tr>
+                            <tr>
+                                <td>4</td>
+                                <td>9739</td>
+                                <td>NGUYEN TRAN NAM</td>
+                                <td>96:12</td>
+                                <td><span class="status-dot red"></span>Critical</td>
+                            </tr>
+                            <tr>
+                                <td>5</td>
+                                <td>12295</td>
+                                <td>PUTRA DIMAS SULISTYA</td>
+                                <td>96:27</td>
+                                <td><span class="status-dot red"></span>Critical</td>
+                            </tr>
+                            <tr>
+                                <td>6</td>
+                                <td>1927</td>
+                                <td>LAM NGOC VU</td>
+                                <td>94:16</td>
+                                <td><span class="status-dot yellow"></span>Warning</td>
+                            </tr>
+                            <tr>
+                                <td>7</td>
+                                <td>14404</td>
+                                <td>PHAM DANG QUANG</td>
+                                <td>93:22</td>
+                                <td><span class="status-dot yellow"></span>Warning</td>
+                            </tr>
+                            <tr>
+                                <td>8</td>
+                                <td>9060</td>
+                                <td>ALEX YUNIAR CHAERUDIN</td>
+                                <td>92:55</td>
+                                <td><span class="status-dot yellow"></span>Warning</td>
+                            </tr>
+                            <tr>
+                                <td>9</td>
+                                <td>17863</td>
+                                <td>NGUYEN BA LUAT</td>
+                                <td>92:46</td>
+                                <td><span class="status-dot yellow"></span>Warning</td>
+                            </tr>
+                            <tr>
+                                <td>10</td>
+                                <td>7371</td>
+                                <td>NGUYEN LINH AN</td>
+                                <td>92:42</td>
+                                <td><span class="status-dot yellow"></span>Warning</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Operational Agility -->
+            <div>
+                <section class="section-title">Operational Agility</section>
+                <div class="card">
+                    <h4 style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.875rem;">Base Status
+                        Heatmap</h4>
+                    <div class="base-heatmap">
+                        <div class="heatmap-item high">
+                            <div class="heatmap-code">SGN</div>
+                            <div class="heatmap-value">65</div>
+                            <div class="heatmap-detail">Active Crew</div>
+                            <div class="heatmap-detail">SBY: 36 | Sick: 2</div>
+                        </div>
+                        <div class="heatmap-item high">
+                            <div class="heatmap-code">HAN</div>
+                            <div class="heatmap-value">67</div>
+                            <div class="heatmap-detail">Active Crew</div>
+                            <div class="heatmap-detail">SBY: 56 | Sick: 1</div>
+                        </div>
+                        <div class="heatmap-item medium">
+                            <div class="heatmap-code">DAD</div>
+                            <div class="heatmap-value">14</div>
+                            <div class="heatmap-detail">Active Crew</div>
+                            <div class="heatmap-detail">SBY: 12 | Sick: 1</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Standby/Sick Ratio -->
+                <div class="card" style="margin-top: 1.5rem;">
+                    <h4 style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.875rem;">Standby /
+                        Sick-Call Ratio</h4>
+                    <div class="ratio-card">
+                        <div>
+                            <div class="ratio-label">Standby Available</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">SBY + OSBY</div>
+                        </div>
+                        <div class="ratio-value good" id="standbyCount">152</div>
+                    </div>
+                    <div class="ratio-card">
+                        <div>
+                            <div class="ratio-label">Sick / Call-Sick</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">SL + CSL</div>
+                        </div>
+                        <div class="ratio-value warning" id="sickCount">16</div>
+                    </div>
+                    <div class="ratio-card">
+                        <div>
+                            <div class="ratio-label">Coverage Ratio</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">Standby / Sick</div>
+                        </div>
+                        <div class="ratio-value good" id="coverageRatio">950% ✓</div>
+                    </div>
+                </div>
+
+                <!-- Multi-REG Rotation Alerts -->
+                <div class="card" style="margin-top: 1.5rem;">
+                    <h4 style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.875rem;">Multi-REG
+                        Rotation (113 Crew)</h4>
+                    <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 1rem;">Crew members
+                        flying on 2+ different aircraft registrations today</p>
+                    <div class="alert-list" style="max-height: 150px;">
+                        <div class="alert-item"
+                            style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2);">
+                            <span class="icon" style="color: var(--accent-yellow);">⚠</span>
+                            <span><strong>ID 18708</strong> (CP): VN-A526 → VN-A671</span>
+                        </div>
+                        <div class="alert-item"
+                            style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2);">
+                            <span class="icon" style="color: var(--accent-yellow);">⚠</span>
+                            <span><strong>ID 1927</strong> (CP): VN-A549 → VN-A634</span>
+                        </div>
+                        <div class="alert-item"
+                            style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2);">
+                            <span class="icon" style="color: var(--accent-yellow);">⚠</span>
+                            <span><strong>ID 9060</strong> (CP): VN-A535 → VN-A640</span>
+                        </div>
+                        <div class="alert-item"
+                            style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2);">
+                            <span class="icon" style="color: var(--accent-yellow);">⚠</span>
+                            <span><strong>ID 14204</strong> (CP): VN-A535 → VN-A687</span>
+                        </div>
+                        <div class="alert-item"
+                            style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2);">
+                            <span class="icon" style="color: var(--accent-yellow);">⚠</span>
+                            <span><strong>ID 13678</strong> (CP): VN-A532 → VN-A535</span>
+                        </div>
+                    </div>
+                    <div style="text-align: center; margin-top: 0.75rem;">
+                        <span style="font-size: 0.75rem; color: var(--accent-cyan); cursor: pointer;">View all 113 crew
+                            →</span>
+                    </div>
+                </div>
+
+                <!-- Aircraft Utilization -->
+                <div class="card" style="margin-top: 1.5rem;">
+                    <h4 style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.875rem;"
+                        id="utilizationTitle">Aircraft
+                        Utilization (15/01/2026)</h4>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Aircraft</th>
+                                <th>Dom Block</th>
+                                <th>Int Block</th>
+                                <th>Total</th>
+                                <th>Avg Util</th>
+                            </tr>
+                        </thead>
+                        <tbody id="utilizationTableBody">
+                            <tr>
+                                <td>A320</td>
+                                <td>65:45</td>
+                                <td>100:00</td>
+                                <td>165:45</td>
+                                <td>11:03</td>
+                            </tr>
+                            <tr>
+                                <td>A321</td>
+                                <td>240:50</td>
+                                <td>570:40</td>
+                                <td>811:30</td>
+                                <td>12:40</td>
+                            </tr>
+                            <tr>
+                                <td>A330</td>
+                                <td>16:00</td>
+                                <td>92:05</td>
+                                <td>108:05</td>
+                                <td>13:30</td>
+                            </tr>
+                            <tr style="background: rgba(59, 130, 246, 0.1); font-weight: 600;">
+                                <td>TOTAL</td>
+                                <td>322:35</td>
+                                <td>762:45</td>
+                                <td>1085:20</td>
+                                <td>12:28</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // API Base URL
+        const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:5000'
+            : '';
+
+        // Dashboard Data
+        let dashboardData = null;
+        let crewChart = null;
+
+        // Fetch dashboard data from API
+        async function fetchDashboardData() {
+            try {
+                const response = await fetch(`${API_BASE}/api/dashboard`);
+                if (response.ok) {
+                    dashboardData = await response.json();
+                    updateDashboard(dashboardData);
+                    return dashboardData;
+                }
+            } catch (error) {
+                console.log('API not available, using static data');
+            }
+            return null;
+        }
+
+        // Update dashboard with API data
+        function updateDashboard(data) {
+            if (!data || !data.summary) return;
+
+            // Update summary metrics
+            const metrics = document.querySelectorAll('.metric-value');
+            if (metrics.length >= 4) {
+                metrics[0].textContent = data.summary.total_aircraft;
+                metrics[1].textContent = data.summary.total_flights;
+                metrics[2].textContent = data.summary.total_crew.toLocaleString();
+                metrics[3].textContent = data.summary.avg_flight_hours + 'h';
+            }
+
+            // Update Multi-REG count
+            const multiRegMetric = document.querySelector('.metric-value[style*="yellow"]');
+            if (multiRegMetric) {
+                multiRegMetric.textContent = data.summary.multi_reg_count;
+            }
+
+            // Update crew roles in trend
+            if (data.crew_roles) {
+                const roleText = `CP: ${data.crew_roles.CP || 0} | FO: ${data.crew_roles.FO || 0} | PU: ${data.crew_roles.PU || 0} | FA: ${data.crew_roles.FA || 0}`;
+                const trendElements = document.querySelectorAll('.metric-trend');
+                if (trendElements[2]) {
+                    trendElements[2].textContent = roleText;
+                }
+
+                // Update crew distribution chart
+                if (crewChart) {
+                    crewChart.data.datasets[0].data = [
+                        data.crew_roles.CP || 0,
+                        data.crew_roles.FO || 0,
+                        data.crew_roles.PU || 0,
+                        data.crew_roles.FA || 0
+                    ];
+                    crewChart.update();
+                }
+            }
+
+            // Update Multi-REG crew list
+            if (data.multi_reg_crew && data.multi_reg_crew.length > 0) {
+                const alertList = document.querySelector('.alert-list[style*="max-height: 150px"]');
+                if (alertList) {
+                    alertList.innerHTML = data.multi_reg_crew.slice(0, 5).map(crew => `
+                        <div class="alert-item" style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2);">
+                            <span class="icon" style="color: var(--accent-yellow);">⚠</span>
+                            <span><strong>ID ${crew.id}</strong> (${crew.role}): ${crew.regs.join(' → ')}</span>
+                        </div>
+                    `).join('');
+                }
+            }
+
+            // Update Rolling Hours Stats (from RolCrTotReport)
+            if (data.rolling_stats) {
+                const alertNormal = document.getElementById('alertNormal');
+                const alertWarning = document.getElementById('alertWarning');
+                const alertCritical = document.getElementById('alertCritical');
+
+                if (alertNormal) alertNormal.textContent = data.rolling_stats.normal || 0;
+                if (alertWarning) alertWarning.textContent = data.rolling_stats.warning || 0;
+                if (alertCritical) alertCritical.textContent = data.rolling_stats.critical || 0;
+            }
+
+            // Update Rolling Hours Table (from RolCrTotReport)
+            if (data.rolling_hours && data.rolling_hours.length > 0) {
+                const tableBody = document.getElementById('rollingHoursTableBody');
+                if (tableBody) {
+                    tableBody.innerHTML = data.rolling_hours.slice(0, 20).map((crew, index) => {
+                        const statusClass = crew.status === 'critical' ? 'red' :
+                            (crew.status === 'warning' ? 'yellow' : 'green');
+                        const statusLabel = crew.status === 'critical' ? 'Critical' :
+                            (crew.status === 'warning' ? 'Warning' : 'Normal');
+                        return `
+                            <tr>
+                                <td>${index + 1}</td>
+                                <td>${crew.id}</td>
+                                <td>${crew.name}</td>
+                                <td>${crew.block_28day}</td>
+                                <td><span class="status-dot ${statusClass}"></span>${statusLabel}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+            }
+
+            // Update Aircraft Utilization Table (from SacutilReport)
+            if (data.utilization && Object.keys(data.utilization).length > 0) {
+                const utilTableBody = document.getElementById('utilizationTableBody');
+                const utilTitle = document.getElementById('utilizationTitle');
+
+                if (utilTitle) {
+                    const today = new Date();
+                    utilTitle.textContent = `Aircraft Utilization (${today.toLocaleDateString('vi-VN')})`;
+                }
+
+                if (utilTableBody) {
+                    let totalDom = 0, totalInt = 0;
+                    const rows = Object.entries(data.utilization).map(([acType, util]) => {
+                        return `
+                            <tr>
+                                <td>${acType}</td>
+                                <td>${util.dom_block || '-'}</td>
+                                <td>${util.int_block || '-'}</td>
+                                <td>${util.total_block || '-'}</td>
+                                <td>${util.avg_util || '-'}</td>
+                            </tr>
+                        `;
+                    }).join('');
+
+                    utilTableBody.innerHTML = rows;
+                }
+            }
+
+            // Update Crew Schedule stats (from Crew Schedule CSV)
+            if (data.crew_schedule && data.crew_schedule.summary) {
+                const summary = data.crew_schedule.summary;
+                const standbyCount = document.getElementById('standbyCount');
+                const sickCount = document.getElementById('sickCount');
+                const coverageRatio = document.getElementById('coverageRatio');
+
+                const totalStandby = (summary.SBY || 0) + (summary.OSBY || 0);
+                const totalSick = (summary.SL || 0) + (summary.CSL || 0);
+
+                if (standbyCount) standbyCount.textContent = totalStandby;
+                if (sickCount) sickCount.textContent = totalSick;
+
+                if (coverageRatio && totalSick > 0) {
+                    const ratio = Math.round((totalStandby / totalSick) * 100);
+                    coverageRatio.textContent = ratio + '% ' + (ratio >= 300 ? '✓' : '⚠');
+                    coverageRatio.className = ratio >= 300 ? 'ratio-value good' : 'ratio-value warning';
+                } else if (coverageRatio) {
+                    coverageRatio.textContent = '∞ ✓';
+                    coverageRatio.className = 'ratio-value good';
+                }
+            }
+
+            // Update last updated timestamp
+            if (data.last_updated) {
+                console.log('Data last updated:', data.last_updated);
+            }
+
+            console.log('Dashboard updated with API data');
+        }
+
+        // Upload Modal Functions
+        function openUploadModal() {
+            document.getElementById('uploadModal').style.display = 'flex';
+        }
+
+        function closeUploadModal() {
+            document.getElementById('uploadModal').style.display = 'none';
+            document.getElementById('uploadStatus').style.display = 'none';
+        }
+
+        // Upload CSV files
+        async function uploadFiles() {
+            const dayrepFile = document.getElementById('dayrepFile').files[0];
+            const sacutilFile = document.getElementById('sacutilFile').files[0];
+            const rolcrtotFile = document.getElementById('rolcrtotFile').files[0];
+            const crewScheduleFile = document.getElementById('crewScheduleFile').files[0];
+            const statusDiv = document.getElementById('uploadStatus');
+
+            // At least one file required
+            if (!dayrepFile && !sacutilFile && !rolcrtotFile && !crewScheduleFile) {
+                statusDiv.style.display = 'block';
+                statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
+                statusDiv.style.color = 'var(--accent-red)';
+                statusDiv.textContent = '❌ Please select at least one CSV file to upload';
+                return;
+            }
+
+            statusDiv.style.display = 'block';
+            statusDiv.style.background = 'rgba(59, 130, 246, 0.2)';
+            statusDiv.style.color = 'var(--accent-blue)';
+            statusDiv.textContent = '⏳ Uploading and processing...';
+
+            let uploadResults = [];
+
+            try {
+                // Upload DayRep if provided
+                if (dayrepFile) {
+                    const dayrepFormData = new FormData();
+                    dayrepFormData.append('file', dayrepFile);
+                    const dayrepResponse = await fetch(`${API_BASE}/api/upload/dayrep`, {
+                        method: 'POST',
+                        body: dayrepFormData
+                    });
+                    if (dayrepResponse.ok) {
+                        uploadResults.push('✓ DayRepReport');
+                    } else {
+                        uploadResults.push('✗ DayRepReport failed');
+                    }
+                }
+
+                // Upload Sacutil if provided
+                if (sacutilFile) {
+                    const sacutilFormData = new FormData();
+                    sacutilFormData.append('file', sacutilFile);
+                    const sacutilResponse = await fetch(`${API_BASE}/api/upload/sacutil`, {
+                        method: 'POST',
+                        body: sacutilFormData
+                    });
+                    if (sacutilResponse.ok) {
+                        uploadResults.push('✓ SacutilReport');
+                    } else {
+                        uploadResults.push('✗ SacutilReport failed');
+                    }
+                }
+
+                // Upload RolCrTotReport if provided
+                if (rolcrtotFile) {
+                    const rolcrtotFormData = new FormData();
+                    rolcrtotFormData.append('file', rolcrtotFile);
+                    const rolcrtotResponse = await fetch(`${API_BASE}/api/upload/rolcrtot`, {
+                        method: 'POST',
+                        body: rolcrtotFormData
+                    });
+                    if (rolcrtotResponse.ok) {
+                        uploadResults.push('✓ RolCrTotReport (Rolling Hours)');
+                    } else {
+                        uploadResults.push('✗ RolCrTotReport failed');
+                    }
+                }
+
+                // Upload Crew Schedule if provided
+                if (crewScheduleFile) {
+                    const crewScheduleFormData = new FormData();
+                    crewScheduleFormData.append('file', crewScheduleFile);
+                    const crewScheduleResponse = await fetch(`${API_BASE}/api/upload/crew_schedule`, {
+                        method: 'POST',
+                        body: crewScheduleFormData
+                    });
+                    if (crewScheduleResponse.ok) {
+                        uploadResults.push('✓ Crew Schedule (Standby/Sick-call)');
+                    } else {
+                        uploadResults.push('✗ Crew Schedule failed');
+                    }
+                }
+
+                statusDiv.style.background = 'rgba(34, 197, 94, 0.2)';
+                statusDiv.style.color = 'var(--accent-green)';
+                statusDiv.innerHTML = `✅ Upload complete!<br><small>${uploadResults.join(' | ')}</small>`;
+
+                // Refresh dashboard data
+                await fetchDashboardData();
+
+                setTimeout(() => {
+                    closeUploadModal();
+                }, 2000);
+
+            } catch (error) {
+                statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
+                statusDiv.style.color = 'var(--accent-red)';
+                statusDiv.textContent = '❌ Error: ' + error.message;
+            }
+        }
+
+        // Refresh data from API
+        async function refreshData() {
+            try {
+                const response = await fetch(`${API_BASE}/api/refresh`, { method: 'POST' });
+                if (response.ok) {
+                    await fetchDashboardData();
+                    alert('✅ Dashboard data refreshed!');
+                }
+            } catch (error) {
+                console.log('Could not refresh from API');
+            }
+        }
+
+        // Update datetime
+        function updateDateTime() {
+            const now = new Date();
+            document.getElementById('current-date').textContent =
+                now.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            document.getElementById('current-time').textContent =
+                now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+        }
+        updateDateTime();
+        setInterval(updateDateTime, 60000);
+
+        // Base selector
+        document.querySelectorAll('.base-btn[data-base]').forEach(btn => {
+            btn.addEventListener('click', function () {
+                document.querySelectorAll('.base-btn[data-base]').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+
+        // Utilization Gauge
+        const gaugeCtx = document.getElementById('utilizationGauge').getContext('2d');
+        new Chart(gaugeCtx, {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [87.5, 12.5],
+                    backgroundColor: [
+                        'rgba(34, 197, 94, 0.8)',
+                        'rgba(30, 41, 59, 0.5)'
+                    ],
+                    borderWidth: 0,
+                    circumference: 270,
+                    rotation: 225
+                }]
+            },
+            options: {
+                cutout: '75%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                },
+                responsive: true,
+                maintainAspectRatio: true
+            }
+        });
+
+        // Crew Distribution Pie Chart
+        const crewCtx = document.getElementById('crewDistribution').getContext('2d');
+        crewChart = new Chart(crewCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['CP (Captain)', 'FO (First Officer)', 'PU (Purser)', 'FA (Flight Attendant)'],
+                datasets: [{
+                    data: [217, 212, 213, 843],
+                    backgroundColor: [
+                        'rgba(59, 130, 246, 0.8)',
+                        'rgba(139, 92, 246, 0.8)',
+                        'rgba(6, 182, 212, 0.8)',
+                        'rgba(34, 197, 94, 0.8)'
+                    ],
+                    borderWidth: 2,
+                    borderColor: 'rgba(15, 23, 42, 0.8)'
+                }]
+            },
+            options: {
+                cutout: '60%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            color: '#94a3b8',
+                            font: { size: 10 },
+                            boxWidth: 12,
+                            padding: 8
+                        }
+                    }
+                },
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+
+        // Try to fetch from API on page load
+        fetchDashboardData();
+    </script>
+</body>
+
+</html>
