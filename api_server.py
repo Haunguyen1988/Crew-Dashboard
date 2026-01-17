@@ -30,9 +30,11 @@ def allowed_file(filename):
 
 @app.route('/api/dashboard', methods=['GET'])
 def get_dashboard():
-    """Get all dashboard data"""
+    """Get all dashboard data. Optional ?date=DD/MM/YY for filtering by specific date"""
     processor = get_processor()
-    data = processor.get_dashboard_data()
+    # Get optional date filter from query parameter
+    filter_date = request.args.get('date', None)
+    data = processor.get_dashboard_data(filter_date)
     return jsonify(data)
 
 

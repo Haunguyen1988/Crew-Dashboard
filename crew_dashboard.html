@@ -130,6 +130,60 @@
             font-size: 0.875rem;
         }
 
+        /* Date Filter Styles */
+        .date-filter-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .date-filter-label {
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .date-filter-select {
+            padding: 8px 12px;
+            background: var(--glass-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            cursor: pointer;
+            min-width: 140px;
+            transition: all 0.3s ease;
+        }
+
+        .date-filter-select:hover {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
+        }
+
+        .date-filter-select:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
+        }
+
+        .date-filter-select option {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .date-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: white;
+        }
+
         /* Main Content */
         .main-content {
             padding: 2rem;
@@ -599,6 +653,14 @@
             <button class="base-btn" onclick="refreshData()" style="background: var(--accent-blue);">
                 🔄 Refresh
             </button>
+            <!-- Date Filter -->
+            <div class="date-filter-container">
+                <span class="date-filter-label">📅 Filter Date:</span>
+                <select id="dateFilter" class="date-filter-select" onchange="onDateFilterChange()">
+                    <option value="">All Dates</option>
+                </select>
+                <span id="dateIndicator" class="date-indicator" style="display: none;">Filtered</span>
+            </div>
             <div class="base-selector">
                 <button class="base-btn active" data-base="all">ALL</button>
                 <button class="base-btn" data-base="sgn">SGN</button>
@@ -673,6 +735,39 @@
         </div>
     </div>
 
+    <!-- Crew Rotation Modal -->
+    <div id="crewRotationModal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; overflow-y: auto;">
+        <div
+            style="background: var(--bg-secondary); padding: 2rem; border-radius: 16px; max-width: 800px; width: 95%; border: 1px solid var(--border-color); margin: 2rem auto; max-height: 80vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="color: var(--text-primary);">✈️ Crew Rotation Details</h3>
+                <button onclick="closeCrewRotationModal()"
+                    style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">×</button>
+            </div>
+
+            <p style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                Crew groups that changed aircraft during the operating day (04:00-03:59).
+                Each row represents one crew group rotation event.
+            </p>
+
+            <table class="data-table" id="crewRotationTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Crew Count</th>
+                        <th>Lead Role</th>
+                        <th>Aircraft Sequence</th>
+                        <th>Rotations</th>
+                    </tr>
+                </thead>
+                <tbody id="crewRotationTableBody">
+                    <!-- Dynamic content -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <!-- Main Content -->
     <main class="main-content">
         <!-- Executive Summary Section -->
@@ -718,9 +813,9 @@
                 <div class="metric-label" style="margin-top: 0.5rem;">Crew Distribution</div>
             </div>
             <div class="card metric-card">
-                <div class="metric-value" style="color: var(--accent-yellow);">113</div>
-                <div class="metric-label">Multi-REG Crew</div>
-                <span class="metric-trend">Crew flying 2+ aircraft</span>
+                <div class="metric-value" id="crewRotationCount" style="color: var(--accent-yellow);">0</div>
+                <div class="metric-label">Crew Rotation</div>
+                <span class="metric-trend">Groups changing aircraft</span>
             </div>
             <div class="card metric-card">
                 <div class="metric-value">1,085h</div>
@@ -951,41 +1046,19 @@
                     </div>
                 </div>
 
-                <!-- Multi-REG Rotation Alerts -->
+                <!-- Crew Rotation Section -->
                 <div class="card" style="margin-top: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.875rem;">Multi-REG
-                        Rotation (113 Crew)</h4>
-                    <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 1rem;">Crew members
-                        flying on 2+ different aircraft registrations today</p>
-                    <div class="alert-list" style="max-height: 150px;">
-                        <div class="alert-item"
-                            style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2);">
-                            <span class="icon" style="color: var(--accent-yellow);">⚠</span>
-                            <span><strong>ID 18708</strong> (CP): VN-A526 → VN-A671</span>
-                        </div>
-                        <div class="alert-item"
-                            style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2);">
-                            <span class="icon" style="color: var(--accent-yellow);">⚠</span>
-                            <span><strong>ID 1927</strong> (CP): VN-A549 → VN-A634</span>
-                        </div>
-                        <div class="alert-item"
-                            style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2);">
-                            <span class="icon" style="color: var(--accent-yellow);">⚠</span>
-                            <span><strong>ID 9060</strong> (CP): VN-A535 → VN-A640</span>
-                        </div>
-                        <div class="alert-item"
-                            style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2);">
-                            <span class="icon" style="color: var(--accent-yellow);">⚠</span>
-                            <span><strong>ID 14204</strong> (CP): VN-A535 → VN-A687</span>
-                        </div>
-                        <div class="alert-item"
-                            style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2);">
-                            <span class="icon" style="color: var(--accent-yellow);">⚠</span>
-                            <span><strong>ID 13678</strong> (CP): VN-A532 → VN-A535</span>
-                        </div>
+                    <h4 style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.875rem;"
+                        id="crewRotationTitle">Crew
+                        Rotation (0 Groups)</h4>
+                    <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 1rem;">Crew groups
+                        changing aircraft during operating day (04:00-03:59)</p>
+                    <div class="alert-list" id="crewRotationList" style="max-height: 200px;">
+                        <!-- Dynamic content -->
                     </div>
                     <div style="text-align: center; margin-top: 0.75rem;">
-                        <span style="font-size: 0.75rem; color: var(--accent-cyan); cursor: pointer;">View all 113 crew
+                        <span id="viewAllCrewBtn" onclick="openCrewRotationModal()"
+                            style="font-size: 0.75rem; color: var(--accent-cyan); cursor: pointer;">View all rotations
                             →</span>
                     </div>
                 </div>
@@ -1050,20 +1123,81 @@
         // Dashboard Data
         let dashboardData = null;
         let crewChart = null;
+        let currentDateFilter = null;  // Current date filter
 
         // Fetch dashboard data from API
-        async function fetchDashboardData() {
+        async function fetchDashboardData(filterDate = null) {
             try {
-                const response = await fetch(`${API_BASE}/api/dashboard`);
+                let url = `${API_BASE}/api/dashboard`;
+                if (filterDate) {
+                    url += `?date=${encodeURIComponent(filterDate)}`;
+                }
+                const response = await fetch(url);
                 if (response.ok) {
                     dashboardData = await response.json();
                     updateDashboard(dashboardData);
+                    updateDateFilter(dashboardData);
                     return dashboardData;
                 }
             } catch (error) {
                 console.log('API not available, using static data');
             }
             return null;
+        }
+
+        // Update date filter dropdown with available dates
+        function updateDateFilter(data) {
+            const dateSelect = document.getElementById('dateFilter');
+            const dateIndicator = document.getElementById('dateIndicator');
+
+            if (!dateSelect || !data.available_dates) return;
+
+            // Store current selection
+            const currentValue = dateSelect.value;
+
+            // Clear and rebuild options
+            dateSelect.innerHTML = '<option value="">📊 All Dates (' + data.available_dates.length + ')</option>';
+
+            // Add available dates
+            data.available_dates.forEach(date => {
+                const option = document.createElement('option');
+                option.value = date;
+                option.textContent = formatDateForDisplay(date);
+                dateSelect.appendChild(option);
+            });
+
+            // Restore selection if still valid
+            if (currentValue && data.available_dates.includes(currentValue)) {
+                dateSelect.value = currentValue;
+            }
+
+            // Update indicator
+            if (data.current_filter_date) {
+                dateIndicator.style.display = 'inline-flex';
+                dateIndicator.textContent = '🔍 ' + formatDateForDisplay(data.current_filter_date);
+            } else {
+                dateIndicator.style.display = 'none';
+            }
+        }
+
+        // Format date for display (DD/MM/YY -> DD/MM/2026)
+        function formatDateForDisplay(dateStr) {
+            if (!dateStr) return '';
+            const parts = dateStr.split('/');
+            if (parts.length >= 3) {
+                const year = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+                return `${parts[0]}/${parts[1]}/${year}`;
+            }
+            return dateStr;
+        }
+
+        // Handle date filter change
+        function onDateFilterChange() {
+            const dateSelect = document.getElementById('dateFilter');
+            currentDateFilter = dateSelect.value || null;
+
+            // Fetch data with new filter
+            fetchDashboardData(currentDateFilter);
         }
 
         // Update dashboard with API data
@@ -1079,10 +1213,11 @@
                 metrics[3].textContent = data.summary.avg_flight_hours + 'h';
             }
 
-            // Update Multi-REG count
+            // Update Crew Rotation count (from API)
+            const rotationCount = data.summary.crew_rotation_count || 0;
             const multiRegMetric = document.querySelector('.metric-value[style*="yellow"]');
             if (multiRegMetric) {
-                multiRegMetric.textContent = data.summary.multi_reg_count;
+                multiRegMetric.textContent = rotationCount;
             }
 
             // Update crew roles in trend
@@ -1105,16 +1240,42 @@
                 }
             }
 
-            // Update Multi-REG crew list
-            if (data.multi_reg_crew && data.multi_reg_crew.length > 0) {
-                const alertList = document.querySelector('.alert-list[style*="max-height: 150px"]');
-                if (alertList) {
-                    alertList.innerHTML = data.multi_reg_crew.slice(0, 5).map(crew => `
+            // Update Crew Rotation count and list (using rotationCount from above)
+            const crewRotationCountEl = document.getElementById('crewRotationCount');
+            if (crewRotationCountEl) {
+                crewRotationCountEl.textContent = rotationCount;
+            }
+
+            // Update rotation title
+            const rotationTitle = document.getElementById('crewRotationTitle');
+            if (rotationTitle) {
+                rotationTitle.textContent = `Crew Rotation (${rotationCount} Groups)`;
+            }
+
+            // Update Crew Rotation list
+            if (data.crew_rotations && data.crew_rotations.length > 0) {
+                const rotationList = document.getElementById('crewRotationList');
+                if (rotationList) {
+                    rotationList.innerHTML = data.crew_rotations.slice(0, 5).map(rotation => `
                         <div class="alert-item" style="background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.2);">
-                            <span class="icon" style="color: var(--accent-yellow);">⚠</span>
-                            <span><strong>ID ${crew.id}</strong> (${crew.role}): ${crew.regs.join(' → ')}</span>
+                            <span class="icon" style="color: var(--accent-yellow);">✈</span>
+                            <span>
+                                <strong>${rotation.crew_count} crew</strong> (${rotation.role}): 
+                                ${rotation.regs.join(' → ')}
+                            </span>
                         </div>
                     `).join('');
+                }
+
+                // Update view all button
+                const viewAllBtn = document.getElementById('viewAllCrewBtn');
+                if (viewAllBtn) {
+                    viewAllBtn.textContent = `View all ${rotationCount} rotations →`;
+                }
+            } else {
+                const rotationList = document.getElementById('crewRotationList');
+                if (rotationList) {
+                    rotationList.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem;">No crew rotations detected for this period</div>';
                 }
             }
 
@@ -1218,6 +1379,32 @@
         function closeUploadModal() {
             document.getElementById('uploadModal').style.display = 'none';
             document.getElementById('uploadStatus').style.display = 'none';
+        }
+
+        // Crew Rotation Modal Functions
+        function openCrewRotationModal() {
+            const modal = document.getElementById('crewRotationModal');
+            modal.style.display = 'flex';
+
+            // Populate table with data
+            if (dashboardData && dashboardData.crew_rotations) {
+                const tableBody = document.getElementById('crewRotationTableBody');
+                if (tableBody) {
+                    tableBody.innerHTML = dashboardData.crew_rotations.map((rotation, index) => `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td><strong>${rotation.crew_count}</strong> crew</td>
+                            <td>${rotation.role}</td>
+                            <td>${rotation.regs.join(' → ')}</td>
+                            <td><span class="status-dot yellow"></span>${rotation.rotations}</td>
+                        </tr>
+                    `).join('');
+                }
+            }
+        }
+
+        function closeCrewRotationModal() {
+            document.getElementById('crewRotationModal').style.display = 'none';
         }
 
         // Upload CSV files
@@ -1328,6 +1515,9 @@
             try {
                 const response = await fetch(`${API_BASE}/api/refresh`, { method: 'POST' });
                 if (response.ok) {
+                    // Reset date filter and fetch fresh data
+                    currentDateFilter = null;
+                    document.getElementById('dateFilter').value = '';
                     await fetchDashboardData();
                     alert('✅ Dashboard data refreshed!');
                 }
