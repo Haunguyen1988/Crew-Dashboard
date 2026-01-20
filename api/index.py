@@ -57,7 +57,7 @@ def get_default_data():
         'crew_rotations': [], 'available_dates': [], 'operating_crew': [],
         'utilization': {}, 'rolling_hours': [],
         'rolling_stats': {'normal': 0, 'warning': 0, 'critical': 0, 'total': 0},
-        'crew_schedule': {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
+        'crew_schedule': {'summary': {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}}
     }
 
 
@@ -121,7 +121,9 @@ def load_supabase_data(filter_date=None):
         # Add Supabase-specific data
         try:
             metrics['rolling_hours'] = (db.get_rolling_hours() or [])[:20]
-            metrics['crew_schedule'] = db.get_crew_schedule_summary(filter_date) or {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
+            # Wrap in summary to match template expectation: data.crew_schedule.summary
+            summary_data = db.get_crew_schedule_summary(filter_date) or {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
+            metrics['crew_schedule'] = {'summary': summary_data}
         except:
             pass
         
