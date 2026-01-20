@@ -1207,7 +1207,7 @@ class DataProcessor:
             'utilization': utilization_data,
             'rolling_hours': self.rolling_hours[:50],  # Top 50
             'rolling_stats': rolling_stats,
-            'crew_schedule': self.crew_schedule.copy(),
+            'crew_schedule': self.crew_schedule.copy() if isinstance(self.crew_schedule, dict) else {'summary': {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}},
             'last_updated': datetime.now().isoformat()
         }
         
@@ -1221,6 +1221,10 @@ class DataProcessor:
             if sum(daily_stats.values()) > 0:
                 data['crew_schedule']['summary'] = daily_stats
                 print(f"DEBUG: Overrode summary with: {daily_stats}")
+        
+        # FINAL SAFETY CHECK: Ensure summary exists
+        if 'summary' not in data['crew_schedule']:
+            data['crew_schedule']['summary'] = {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
         
         return data
     
