@@ -4,3 +4,6 @@ gunicorn==21.2.0
 Werkzeug==3.0.1
 supabase>=2.0.0
 python-dotenv>=1.0.0
+zeep>=4.2.1
+APScheduler>=3.10.0
+pytz>=2023.3

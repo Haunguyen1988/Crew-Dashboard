@@ -1239,6 +1239,169 @@ class DataProcessor:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
         return str(output_path)
+    
+    # ============================================================
+    # AIMS Integration Methods
+    # ============================================================
+    
+    def get_alert_status(self, block_hours: float) -> str:
+        """
+        Determine alert status based on Alert Matrix
+        
+        Alert Matrix (28-day rolling):
+        - Normal: <= 85 hours (Green)
+        - Warning: > 85 hours (Yellow)
+        - Critical: > 95 hours (Red)
+        
+        Args:
+            block_hours: Total block hours in 28-day period
+            
+        Returns:
+            str: 'normal', 'warning', or 'critical'
+        """
+        if block_hours > 95:
+            return 'critical'
+        elif block_hours > 85:
+            return 'warning'
+        return 'normal'
+    
+    def convert_utc_to_gmt7(self, utc_datetime):
+        """
+        Convert UTC datetime to GMT+7 (Vietnam timezone)
+        
+        Args:
+            utc_datetime: datetime object or ISO string in UTC
+            
+        Returns:
+            datetime: Converted to GMT+7
+        """
+        from datetime import timedelta
+        
+        if isinstance(utc_datetime, str):
+            try:
+                # Try parsing ISO format
+                utc_datetime = datetime.fromisoformat(utc_datetime.replace('Z', '+00:00'))
+            except ValueError:
+                return utc_datetime
+        
+        # Simple UTC to GMT+7 conversion
+        if utc_datetime:
+            return utc_datetime + timedelta(hours=7)
+        return utc_datetime
+    
+    def load_from_aims(self, from_date=None, to_date=None):
+        """
+        Load data from AIMS API instead of CSV files
+        
+        This method integrates with aims_soap_client to fetch live data.
+        Only active when AIMS_ENABLED=true in environment.
+        
+        Args:
+            from_date: Start date (default: today - 30 days)
+            to_date: End date (default: today + 30 days)
+            
+        Returns:
+            dict: Summary of loaded data
+        """
+        try:
+            from aims_soap_client import get_aims_client, is_aims_available
+            
+            if not is_aims_available():
+                return {'success': False, 'error': 'AIMS not available or not enabled'}
+            
+            client = get_aims_client()
+            
+            # Use optimized date range if not specified
+            if not from_date or not to_date:
+                from_date, to_date = client.get_optimized_date_range()
+            
+            result = {
+                'success': True,
+                'flights_loaded': 0,
+                'crew_loaded': 0,
+                'errors': []
+            }
+            
+            # 1. Load flight details
+            flight_result = client.get_flight_details(from_date, to_date)
+            if flight_result['success']:
+                # Convert AIMS flight data to our internal format
+                for flight in flight_result['flights']:
+                    # Apply UTC to GMT+7 conversion for display
+                    dep_dt = flight.get('dep_actual_dt')
+                    if dep_dt:
+                        flight['dep_actual_dt_local'] = self.convert_utc_to_gmt7(dep_dt)
+                    
+                    # Store in our data structure
+                    self.flights.append(flight)
+                    
+                    # Group by date
+                    flight_date = flight.get('flight_date', '')
+                    if flight_date:
+                        self.flights_by_date[flight_date].append(flight)
+                
+                result['flights_loaded'] = len(flight_result['flights'])
+            else:
+                result['errors'].append(flight_result.get('error'))
+            
+            # 2. Load crew list
+            crew_result = client.get_crew_list(from_date, to_date)
+            if crew_result['success']:
+                result['crew_loaded'] = len(crew_result['crew_list'])
+            else:
+                result['errors'].append(crew_result.get('error'))
+            
+            return result
+            
+        except ImportError as e:
+            return {'success': False, 'error': f'AIMS module not available: {e}'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def calculate_rolling_28day_stats(self):
+        """
+        Calculate rolling 28-day statistics with Alert Matrix
+        
+        Returns summary of crew compliance status based on block hours.
+        
+        Returns:
+            dict: {
+                'total_crew': int,
+                'normal_count': int,
+                'warning_count': int,
+                'critical_count': int,
+                'compliance_rate': float (percentage of normal crew)
+            }
+        """
+        stats = {
+            'total_crew': 0,
+            'normal_count': 0,
+            'warning_count': 0,
+            'critical_count': 0,
+            'compliance_rate': 100.0
+        }
+        
+        if not self.rolling_hours:
+            return stats
+        
+        stats['total_crew'] = len(self.rolling_hours)
+        
+        for crew in self.rolling_hours:
+            status = crew.get('status', 'normal')
+            if status == 'critical':
+                stats['critical_count'] += 1
+            elif status == 'warning':
+                stats['warning_count'] += 1
+            else:
+                stats['normal_count'] += 1
+        
+        if stats['total_crew'] > 0:
+            stats['compliance_rate'] = round(
+                (stats['normal_count'] / stats['total_crew']) * 100, 1
+            )
+        
+        return stats
+
 
 
 # Singleton instance for the API

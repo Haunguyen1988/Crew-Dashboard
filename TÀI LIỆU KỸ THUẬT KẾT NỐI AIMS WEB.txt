@@ -1,0 +1,151 @@
+TÀI LIỆU KỸ THUẬT: KẾT NỐI AIMS WEB SERVICE & ANTIGRAVITY
+
+Dự án: Crew Management Dashboard (CMS)
+
+Môi trường: Test (Vietjet Air)
+
+Tài liệu tham chiếu: CREW_DASHBOARD_SPEC.pdf & web service.pdf
+
+1. Thông tin hạ tầng (Infrastructure)
+
+Để Antigravity có thể truy cập dữ liệu, cần cấu hình các thông số sau:
+
+WSDL Endpoint: https://vj-awstest.aims.aero/api/soap/aimswebservice?singlewsdl
+
+Giao thức: SOAP 1.1 (XML)
+
+Phương thức xác thực: Session-based qua hàm Login.
+
+2. Danh mục API & Mapping Dữ liệu
+
+Dữ liệu từ AIMS sẽ được ánh xạ (Mapping) vào các Data Models bên trong Antigravity để phục vụ việc hiển thị Dashboard.
+
+2.1. Lấy lịch công tác (Crew Roster)
+
+Hàm API: GetCrewSchedule
+
+Đối tượng trả về: TAIMSCrewSchedule
+
+Mapping chính:
+
+Trường AIMS
+
+Mô tả
+
+Mapping Antigravity
+
+cCrewID
+
+Mã nhân viên
+
+dim_crew.crew_id
+
+cActivityCode
+
+Loại hoạt động
+
+fact_roster.activity_type
+
+dStartDate
+
+Bắt đầu (UTC)
+
+fact_roster.start_dt
+
+dEndDate
+
+Kết thúc (UTC)
+
+fact_roster.end_dt
+
+cFlightNumber
+
+Số hiệu chuyến bay
+
+fact_roster.flight_no
+
+2.2. Lấy giờ bay thực tế (Actuals/Block Hours)
+
+Hàm API: GetCrewActuals
+
+Đối tượng trả về: TAIMSFlight / TAIMSActuals
+
+Mapping chính:
+
+Trường AIMS
+
+Mô tả
+
+Mapping Antigravity
+
+nBlockTime
+
+Tổng giờ chốt (phút)
+
+fact_actuals.block_minutes
+
+dActualDeparture
+
+Giờ đi thực tế
+
+fact_actuals.dep_actual_dt
+
+cRegistration
+
+Số hiệu tàu bay
+
+fact_actuals.ac_reg
+
+3. Logic xử lý trên Antigravity (Business Logic)
+
+Antigravity cần thực hiện các phép tính toán sau để đáp ứng yêu cầu từ CREW_DASHBOARD_SPEC:
+
+3.1. Tính toán Giờ bay 28 ngày (Rolling 28-day)
+
+Sử dụng dữ liệu từ bảng fact_actuals, tính tổng giờ bay trong cửa sổ 28 ngày trượt tính từ thời điểm hiện tại:
+
+Công thức: SUM(block_minutes) WHERE date BETWEEN (Today - 28) AND Today.
+
+Đơn vị: Chuyển đổi từ Phút sang Giờ (SUM / 60).
+
+3.2. Hệ thống cảnh báo (Alert Matrix)
+
+Thiết lập các Rule trên Antigravity để đánh dấu màu (Color Coding) cho các bản ghi:
+
+Mức Warning (Vàng): Khi giờ bay > 85 giờ.
+
+Mức Critical (Đỏ): Khi giờ bay > 95 giờ.
+
+4. Quy trình triển khai trên Antigravity (Implementation Flow)
+
+Khởi tạo kết nối:
+
+Tạo một API Data Connector trong Antigravity trỏ đến URL WSDL.
+
+Viết Script khởi tạo gọi hàm Login(cUserName, cPassword) để nhận SessionID.
+
+Xây dựng Pipeline:
+
+Thiết lập các Job ETL chạy định kỳ (mỗi 15 phút).
+
+Gọi hàm GetCrewSchedule và GetCrewActuals.
+
+Lưu trữ kết quả vào Staging Tables trong Antigravity.
+
+Thiết kế Widgets:
+
+Roster Heatmap: Sử dụng biểu đồ Pivot hoặc Heatmap để hiển thị dải lịch trình của tổ bay.
+
+Compliance Gauge: Hiển thị tỉ lệ % phi công đang ở mức an toàn/nguy hiểm.
+
+Drill-down: Cho phép người dùng click vào một phi công để xem chi tiết lịch sử bay 28 ngày.
+
+5. Lưu ý Kỹ thuật & Bảo mật
+
+Timezone: Dữ liệu AIMS thường ở dạng UTC. Antigravity cần convert sang GMT+7 khi hiển thị cho người dùng Việt Nam.
+
+Tối ưu hóa: Chỉ nên fetch dữ liệu trong khoảng thời gian cần thiết (Ví dụ: Fetch dữ liệu từ 30 ngày trước đến 30 ngày sau so với ngày hiện tại).
+
+Error Handling: Phải có cơ chế log lỗi khi hàm Login thất bại hoặc Session bị hết hạn (Expired).
+
+Tài liệu này được soạn thảo dựa trên yêu cầu tích hợp hệ thống CMS cho Vietjet Air.

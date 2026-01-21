@@ -34,12 +34,27 @@ def index():
     # Get data
     data = processor.get_dashboard_data(filter_date)
     
+    # Calculate compliance rate from rolling_hours
+    compliance_stats = processor.calculate_rolling_28day_stats()
+    data['compliance_rate'] = compliance_stats.get('compliance_rate', 100)
+    
     # Check DB connection status for UI debugging
     from supabase_client import is_connected
     db_connected = is_connected()
     
+    # Check AIMS availability
+    try:
+        from aims_soap_client import is_aims_available
+        aims_enabled = is_aims_available()
+    except ImportError:
+        aims_enabled = False
+    
     # Render template with data
-    return render_template('crew_dashboard.html', data=data, filter_date=filter_date, db_connected=db_connected)
+    return render_template('crew_dashboard.html', 
+                          data=data, 
+                          filter_date=filter_date, 
+                          db_connected=db_connected,
+                          aims_enabled=aims_enabled)
 
 @app.route('/upload', methods=['POST'])
 def upload_files():

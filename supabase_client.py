@@ -322,3 +322,105 @@ def clear_all_data():
         except:
             pass
     return True
+
+
+# ==================== AIMS STAGING TABLES ====================
+
+def upsert_fact_actuals(records: list):
+    """Upsert flight actuals from AIMS API"""
+    client = get_client()
+    if not client or not records:
+        return None
+    
+    try:
+        # Upsert with conflict on flight_date + flight_no
+        result = client.table('fact_actuals').upsert(
+            records,
+            on_conflict='flight_date,flight_no'
+        ).execute()
+        return len(records)
+    except Exception as e:
+        print(f"Error upserting fact_actuals: {e}")
+        # Try insert as fallback
+        try:
+            for i in range(0, len(records), 100):
+                batch = records[i:i+100]
+                client.table('fact_actuals').insert(batch).execute()
+            return len(records)
+        except:
+            return None
+
+def upsert_dim_crew(records: list):
+    """Upsert crew master data from AIMS API"""
+    client = get_client()
+    if not client or not records:
+        return None
+    
+    try:
+        result = client.table('dim_crew').upsert(
+            records,
+            on_conflict='crew_id'
+        ).execute()
+        return len(records)
+    except Exception as e:
+        print(f"Error upserting dim_crew: {e}")
+        return None
+
+def insert_fact_leg_members(records: list):
+    """Insert leg members from FetchLegMembersPerDay"""
+    client = get_client()
+    if not client or not records:
+        return None
+    
+    try:
+        # Insert in batches
+        for i in range(0, len(records), 100):
+            batch = records[i:i+100]
+            client.table('fact_leg_members').insert(batch).execute()
+        return len(records)
+    except Exception as e:
+        print(f"Error inserting fact_leg_members: {e}")
+        return None
+
+def get_fact_leg_members(filter_date: str = None):
+    """Get leg members, optionally filtered by date"""
+    client = get_client()
+    if not client:
+        return []
+    
+    try:
+        query = client.table('fact_leg_members').select('*')
+        if filter_date:
+            query = query.eq('leg_date', filter_date)
+        
+        return _fetch_all(query)
+    except Exception as e:
+        print(f"Error getting fact_leg_members: {e}")
+        return []
+
+def insert_etl_log(log_data: dict):
+    """Insert ETL job run log"""
+    client = get_client()
+    if not client:
+        return None
+    
+    try:
+        result = client.table('etl_log').insert(log_data).execute()
+        return result.data
+    except Exception as e:
+        print(f"Error inserting etl_log: {e}")
+        return None
+
+def get_etl_logs(limit: int = 10):
+    """Get recent ETL logs"""
+    client = get_client()
+    if not client:
+        return []
+    
+    try:
+        result = client.table('etl_log').select('*').order('start_time', desc=True).limit(limit).execute()
+        return result.data if result.data else []
+    except Exception as e:
+        print(f"Error getting etl_logs: {e}")
+        return []
+

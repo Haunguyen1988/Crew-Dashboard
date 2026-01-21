@@ -653,6 +653,19 @@
             <button class="base-btn" onclick="refreshData()" style="background: var(--accent-blue);">
                 🔄 Refresh
             </button>
+            <!-- Data Source Toggle -->
+            <div class="date-filter-container">
+                <span class="date-filter-label">📡 Source:</span>
+                <select id="dataSourceToggle" class="date-filter-select" style="min-width: 100px;"
+                    onchange="toggleDataSource(this.value)">
+                    <option value="csv" {% if not aims_enabled %}selected{% endif %}>CSV Upload</option>
+                    <option value="aims" {% if aims_enabled %}selected{% endif %}>AIMS API</option>
+                </select>
+                <span id="aimsIndicator" class="date-indicator"
+                    style="{% if not aims_enabled %}display: none;{% endif %} background: linear-gradient(135deg, #06b6d4, #22c55e);">
+                    🔴 Live
+                </span>
+            </div>
             <!-- Date Filter -->
             <div class="date-filter-container">
                 <span class="date-filter-label">📅 Filter Date:</span>
@@ -826,6 +839,71 @@
         </div>
     </div>
 
+    <!-- Crew 28-Day History Modal (Drill-down) -->
+    <div id="crewHistoryModal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; overflow-y: auto;">
+        <div
+            style="background: var(--bg-secondary); padding: 2rem; border-radius: 16px; max-width: 900px; width: 95%; border: 1px solid var(--border-color); margin: 2rem auto; max-height: 80vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="color: var(--text-primary);">📊 28-Day Flight History</h3>
+                <button onclick="closeCrewHistoryModal()"
+                    style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">×</button>
+            </div>
+
+            <div id="crewHistoryInfo"
+                style="padding: 1rem; background: var(--glass-bg); border-radius: 12px; margin-bottom: 1.5rem;">
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary);">CREW NAME</div>
+                        <div id="crewHistoryName" style="font-size: 1.25rem; font-weight: 600;">-</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary);">28-DAY BLOCK HOURS</div>
+                        <div id="crewHistoryHours" style="font-size: 1.25rem; font-weight: 600;">-</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary);">STATUS</div>
+                        <div id="crewHistoryStatus" style="font-size: 1.25rem; font-weight: 600;">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <div style="height: 10px; background: var(--bg-primary); border-radius: 5px; overflow: hidden;">
+                    <div id="crewHistoryProgressBar" class="progress-fill green" style="width: 0%; height: 100%;"></div>
+                </div>
+                <div
+                    style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                    <span>0h</span>
+                    <span>85h (Warning)</span>
+                    <span>95h (Critical)</span>
+                    <span>100h</span>
+                </div>
+            </div>
+
+            <h4 style="margin: 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Flight Details (Last 28 Days)
+            </h4>
+            <table class="data-table" id="crewHistoryTable">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Flight</th>
+                        <th>Route</th>
+                        <th>DEP</th>
+                        <th>ARR</th>
+                        <th>Block Time</th>
+                    </tr>
+                </thead>
+                <tbody id="crewHistoryTableBody">
+                    <tr>
+                        <td colspan="6" style="text-align: center; color: var(--text-secondary);">Select a crew member
+                            to view history</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <!-- Main Content -->
     <main class="main-content">
         <!-- Executive Summary Section -->
@@ -915,6 +993,23 @@
                         <div class="alert-badge red">
                             <div class="alert-count" id="alertCritical">{{ data.rolling_stats.critical }}</div>
                             <div class="alert-label">Critical >95%</div>
+                        </div>
+                    </div>
+
+                    <!-- Compliance Gauge -->
+                    <div
+                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; padding: 1rem; background: var(--glass-bg); border-radius: 12px; border: 1px solid var(--border-color);">
+                        <div style="flex: 1;">
+                            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                                COMPLIANCE RATE</div>
+                            <div
+                                style="font-size: 2rem; font-weight: 700; color: {% if data.compliance_rate >= 90 %}var(--accent-green){% elif data.compliance_rate >= 70 %}var(--accent-yellow){% else %}var(--accent-red){% endif %};">
+                                {{ data.compliance_rate|default(0, true)|round(1) }}%
+                            </div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">Crew within safe limits</div>
+                        </div>
+                        <div class="gauge-container" style="max-width: 120px;">
+                            <canvas id="complianceGauge" width="120" height="120"></canvas>
                         </div>
                     </div>
 
@@ -1128,6 +1223,51 @@
             document.getElementById('crewOperatingModal').style.display = 'none';
         }
 
+        // Crew History Modal Functions
+        function openCrewHistoryModal(crewId, crewName, blockHours, percentage, status) {
+            document.getElementById('crewHistoryName').textContent = crewName || 'Unknown';
+            document.getElementById('crewHistoryHours').textContent = blockHours + ' / 100h';
+
+            // Set status badge with color
+            const statusEl = document.getElementById('crewHistoryStatus');
+            statusEl.textContent = status.toUpperCase();
+            if (status === 'critical') {
+                statusEl.style.color = 'var(--accent-red)';
+            } else if (status === 'warning') {
+                statusEl.style.color = 'var(--accent-yellow)';
+            } else {
+                statusEl.style.color = 'var(--accent-green)';
+            }
+
+            // Update progress bar
+            const progressBar = document.getElementById('crewHistoryProgressBar');
+            progressBar.style.width = Math.min(percentage, 100) + '%';
+            progressBar.className = 'progress-fill ' + (status === 'critical' ? 'red' : (status === 'warning' ? 'yellow' : 'green'));
+
+            // Populate flight history table from dashboardData
+            const tbody = document.getElementById('crewHistoryTableBody');
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-secondary);">Flight history details would be loaded from AIMS API</td></tr>';
+
+            document.getElementById('crewHistoryModal').style.display = 'block';
+        }
+
+        function closeCrewHistoryModal() {
+            document.getElementById('crewHistoryModal').style.display = 'none';
+        }
+
+        // Data Source Toggle Function
+        function toggleDataSource(source) {
+            const indicator = document.getElementById('aimsIndicator');
+            if (source === 'aims') {
+                indicator.style.display = 'inline-flex';
+                // Reload with AIMS source parameter
+                window.location.href = '/?source=aims' + (filterDate ? '&date=' + filterDate : '');
+            } else {
+                indicator.style.display = 'none';
+                window.location.href = '/?source=csv' + (filterDate ? '&date=' + filterDate : '');
+            }
+        }
+
         // Close modals on outside click
         window.onclick = function (event) {
             if (event.target == document.getElementById('uploadModal')) {
@@ -1138,6 +1278,9 @@
             }
             if (event.target == document.getElementById('crewOperatingModal')) {
                 closeCrewOperatingModal();
+            }
+            if (event.target == document.getElementById('crewHistoryModal')) {
+                closeCrewHistoryModal();
             }
         }
 
