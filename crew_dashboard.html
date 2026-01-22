@@ -89,6 +89,7 @@
             font-weight: 700;
             background: linear-gradient(135deg, var(--text-primary), var(--accent-cyan));
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
@@ -773,8 +774,9 @@
                 <thead>
                     <tr>
                         <th>#</th>
-                        <th>Crew Count</th>
-                        <th>Lead Role</th>
+                        <th>Crew Names</th>
+                        <th>Count</th>
+                        <th>Role</th>
                         <th>Aircraft Sequence</th>
                         <th>Flights</th>
                         <th>Rotations</th>
@@ -784,6 +786,8 @@
                     {% for rotation in data.crew_rotations %}
                     <tr>
                         <td>{{ loop.index }}</td>
+                        <td style="font-size: 0.75rem;">{{ rotation.crew_names | join(', ') if rotation.crew_names else
+                            rotation.crew_ids | join(', ') }}</td>
                         <td>{{ rotation.crew_count }}</td>
                         <td>{{ rotation.role }}</td>
                         <td>{{ rotation.regs | join(', ') }}</td>
@@ -931,24 +935,15 @@
                 {% endif %}
             </div>
             <div class="card metric-card">
-                <div class="metric-value">{{ data.summary.avg_flight_hours }}h</div>
-                <div class="metric-label">Avg Flight Hours/Aircraft</div>
+                <div class="metric-value">{{ data.summary.avg_flight_hours }}</div>
+                <div class="metric-label">A/C Utilization</div>
                 <span class="metric-trend up">Total: {{ "{:,.0f}h".format(data.summary.total_block_hours) }}</span>
             </div>
         </div>
 
         <!-- Second Row - Charts -->
         <div class="executive-grid" style="margin-top: 1.5rem;">
-            <div class="card metric-card">
-                <div class="gauge-container">
-                    <canvas id="utilizationGauge" width="200" height="200"></canvas>
-                    <div class="gauge-value">
-                        <div class="value">{{ (data.summary.avg_flight_hours / 24 * 100) | round(1) if
-                            data.summary.avg_flight_hours else 0 }}%</div>
-                        <div class="label">Utilization</div>
-                    </div>
-                </div>
-            </div>
+            <!-- Removed Utilization Gauge per request (No %) -->
             <div class="card metric-card">
                 <div class="chart-container">
                     <canvas id="crewDistribution"></canvas>
@@ -969,7 +964,7 @@
             <div class="card metric-card">
                 <div class="metric-value" id="totalBlockHours">{{ "{:,.0f}h".format(data.summary.total_block_hours) }}
                 </div>
-                <div class="metric-label">Total Block Hours</div>
+                <div class="metric-label">Total Plan Block Hour</div>
                 <span class="metric-trend up">Based on filtered flights</span>
             </div>
         </div>
@@ -979,94 +974,167 @@
             <!-- Safety & Compliance -->
             <div>
                 <section class="section-title">Safety & Compliance</section>
-                <div class="card">
-                    <!-- Alert Summary -->
-                    <div class="alert-grid" id="alertGrid">
-                        <div class="alert-badge green">
-                            <div class="alert-count" id="alertNormal">{{ data.rolling_stats.normal }}</div>
-                            <div class="alert-label">Normal</div>
-                        </div>
-                        <div class="alert-badge yellow">
-                            <div class="alert-count" id="alertWarning">{{ data.rolling_stats.warning }}</div>
-                            <div class="alert-label">Warning >85%</div>
-                        </div>
-                        <div class="alert-badge red">
-                            <div class="alert-count" id="alertCritical">{{ data.rolling_stats.critical }}</div>
-                            <div class="alert-label">Critical >95%</div>
-                        </div>
-                    </div>
 
-                    <!-- Compliance Gauge -->
+                <!-- 28-Day Limits Section -->
+                <div class="card" style="margin-bottom: 2rem;">
                     <div
-                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; padding: 1rem; background: var(--glass-bg); border-radius: 12px; border: 1px solid var(--border-color);">
-                        <div style="flex: 1;">
-                            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
-                                COMPLIANCE RATE</div>
-                            <div
-                                style="font-size: 2rem; font-weight: 700; color: {% if data.compliance_rate >= 90 %}var(--accent-green){% elif data.compliance_rate >= 70 %}var(--accent-yellow){% else %}var(--accent-red){% endif %};">
-                                {{ data.compliance_rate|default(0, true)|round(1) }}%
-                            </div>
-                            <div style="font-size: 0.75rem; color: var(--text-secondary);">Crew within safe limits</div>
-                        </div>
-                        <div class="gauge-container" style="max-width: 120px;">
-                            <canvas id="complianceGauge" width="120" height="120"></canvas>
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h4 style="color: var(--text-secondary); font-size: 1rem;">📅 28-Day Flight Hour Limits</h4>
+                        <div class="alert-grid" style="display: flex; gap: 10px; margin-bottom: 0;">
+                            <span class="alert-badge green" style="padding: 5px 10px; font-size: 0.8rem;">Normal: {{
+                                data.rolling_stats.normal }}</span>
+                            <span class="alert-badge yellow" style="padding: 5px 10px; font-size: 0.8rem;">Warning: {{
+                                data.rolling_stats.warning }}</span>
+                            <span class="alert-badge red" style="padding: 5px 10px; font-size: 0.8rem;">Critical: {{
+                                data.rolling_stats.critical }}</span>
                         </div>
                     </div>
 
-                    <!-- Flight Hour Limits - Dynamic from rolling_hours -->
-                    <h4 style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.875rem;">28-Day Flight
-                        Hour Limits</h4>
-
-                    {% for crew in data.rolling_hours[:5] %}
-                    <div class="progress-item">
-                        <div class="progress-header">
-                            <span>{{ crew.name }}</span>
-                            <span
-                                style="color: {% if crew.status == 'critical' %}var(--accent-red){% elif crew.status == 'warning' %}var(--accent-yellow){% else %}var(--accent-green){% endif %};">{{
-                                crew.block_28day }} / 100h ({{ crew.percentage }}%)</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill {% if crew.status == 'critical' %}red{% elif crew.status == 'warning' %}yellow{% else %}green{% endif %}"
-                                style="width: {{ [crew.percentage, 100] | min }}%"></div>
-                        </div>
+                    <!-- Table 1: All Crew (Scrollable) -->
+                    <h5 style="margin: 1rem 0 0.5rem; color: var(--accent-blue);">list 1: All Crew (28 Days)</h5>
+                    <div
+                        style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>28-Day Hours</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for crew in data.compliance_28d_all %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ crew.id }}</td>
+                                    <td>{{ crew.name }}</td>
+                                    <td>{{ crew.block_28day }}</td>
+                                    <td>
+                                        <span
+                                            class="status-dot {% if crew.status == 'critical' %}red{% elif crew.status == 'warning' %}yellow{% else %}green{% endif %}"></span>
+                                        {{ crew.status }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
-                    {% endfor %}
+
+                    <!-- Table 2: Top 20 High-Intensity -->
+                    <h5 style="margin: 1.5rem 0 0.5rem; color: var(--accent-purple);">List 2: Top 20 High-Intensity (28
+                        Days)</h5>
+                    <div style="overflow-x: auto;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>28-Day Hours</th>
+                                    <th>% (100h)</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for crew in data.compliance_28d_top20 %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ crew.id }}</td>
+                                    <td>{{ crew.name }}</td>
+                                    <td>{{ crew.block_28day }}</td>
+                                    <td>{{ crew.percentage }}%</td>
+                                    <td>
+                                        <span
+                                            class="status-dot {% if crew.status == 'critical' %}red{% elif crew.status == 'warning' %}yellow{% else %}green{% endif %}"></span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
-                <!-- Top 20 High-Intensity Crew -->
-                <div class="card" style="margin-top: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.875rem;">Top 20
-                        High-Intensity Crew (Rolling 28 Days)</h4>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>ID</th>
-                                <th>Name</th>
-                                <th>28-Day Hours</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="rollingHoursTableBody">
-                            {% for crew in data.rolling_hours[:20] %}
-                            <tr>
-                                <td>{{ loop.index }}</td>
-                                <td>{{ crew.crew_id }}</td>
-                                <td>{{ crew.name }}</td>
-                                <td>{{ crew.block_28day }}</td>
-                                <td>
-                                    {% if crew.status == 'critical' %}
-                                    <span class="status-dot red"></span>Critical
-                                    {% elif crew.status == 'warning' %}
-                                    <span class="status-dot yellow"></span>Warning
-                                    {% else %}
-                                    <span class="status-dot green"></span>Normal
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                <!-- 12-Month Limits Section -->
+                <div class="card">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h4 style="color: var(--text-secondary); font-size: 1rem;">🗓️ 12-Month Flight Hour Limits</h4>
+                        <div class="alert-grid" style="display: flex; gap: 10px; margin-bottom: 0;">
+                            <span class="alert-badge green" style="padding: 5px 10px; font-size: 0.8rem;">Normal: {{
+                                data.rolling_stats_12m.normal }}</span>
+                            <span class="alert-badge yellow" style="padding: 5px 10px; font-size: 0.8rem;">Warning: {{
+                                data.rolling_stats_12m.warning }}</span>
+                            <span class="alert-badge red" style="padding: 5px 10px; font-size: 0.8rem;">Critical: {{
+                                data.rolling_stats_12m.critical }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Table 3: All Crew (Scrollable) -->
+                    <h5 style="margin: 1rem 0 0.5rem; color: var(--accent-blue);">List 3: All Crew (12 Months)</h5>
+                    <div
+                        style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>12-Month Hours</th>
+                                    <th>Status (>1000h)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for crew in data.compliance_12m_all %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ crew.id }}</td>
+                                    <td>{{ crew.name }}</td>
+                                    <td>{{ crew.block_12month }}</td>
+                                    <td>
+                                        <span
+                                            class="status-dot {% if crew.status_12m == 'critical' %}red{% elif crew.status_12m == 'warning' %}yellow{% else %}green{% endif %}"></span>
+                                        {{ crew.status_12m }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Table 4: Top 20 High-Intensity -->
+                    <h5 style="margin: 1.5rem 0 0.5rem; color: var(--accent-purple);">List 4: Top 20 High-Intensity (12
+                        Months)</h5>
+                    <div style="overflow-x: auto;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>12-Month Hours</th>
+                                    <th>% (1000h)</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for crew in data.compliance_12m_top20 %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ crew.id }}</td>
+                                    <td>{{ crew.name }}</td>
+                                    <td>{{ crew.block_12month }}</td>
+                                    <td>{{ crew.percentage_12m }}%</td>
+                                    <td>
+                                        <span
+                                            class="status-dot {% if crew.status_12m == 'critical' %}red{% elif crew.status_12m == 'warning' %}yellow{% else %}green{% endif %}"></span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 

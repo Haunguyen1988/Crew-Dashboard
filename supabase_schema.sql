@@ -52,7 +52,9 @@ CREATE TABLE IF NOT EXISTS rolling_hours (
     hours_28day FLOAT DEFAULT 0,
     hours_12month FLOAT DEFAULT 0,
     percentage FLOAT DEFAULT 0,
+    percentage_12m FLOAT DEFAULT 0,
     status TEXT DEFAULT 'normal',
+    status_12m TEXT DEFAULT 'normal',
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

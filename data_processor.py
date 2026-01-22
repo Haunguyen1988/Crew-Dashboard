@@ -90,7 +90,8 @@ class DataProcessor:
                      
                      crew_str = flight.get('crew', '')
                      if crew_str:
-                         crew_list = self.extract_crew_ids(crew_str)
+                         # Exclude non-operating crew from the start
+                         crew_list = self.extract_crew_ids(crew_str, exclude_non_operating=True)
                          for role, crew_id in crew_list:
                              self.crew_to_regs[crew_id].add(reg)
                              self.crew_to_regs_by_date[op_date][crew_id].add(reg)
@@ -135,7 +136,23 @@ class DataProcessor:
         # 3. Rolling Hours
         db_rolling = db.get_rolling_hours()
         if db_rolling:
-            self.rolling_hours = db_rolling
+            self.rolling_hours = []
+            for item in db_rolling:
+                # Map DB columns to frontend expected keys
+                # Front-end expects 'id' to be the Crew ID (digits), not the DB UUID
+                self.rolling_hours.append({
+                    'id': item.get('crew_id', ''),
+                    'name': item.get('name', ''),
+                    'seniority': item.get('seniority', ''),
+                    'block_28day': item.get('block_28day', '0:00'),
+                    'block_12month': item.get('block_12month', '0:00'),
+                    'hours_28day': float(item.get('hours_28day', 0)),
+                    'hours_12month': float(item.get('hours_12month', 0)),
+                    'percentage': float(item.get('percentage', 0)),
+                    'percentage_12m': float(item.get('percentage_12m', 0)) if item.get('percentage_12m') else 0.0,
+                    'status': item.get('status', 'normal'),
+                    'status_12m': item.get('status_12m', 'normal')
+                })
             print(f"Loaded {len(self.rolling_hours)} rolling hour records")
 
         # 4. Crew Schedule
@@ -212,11 +229,39 @@ class DataProcessor:
         
         return calendar_date
     
-    def extract_crew_ids(self, crew_string):
-        """Extract crew IDs from crew string like '-NAME(ROLE) ID'"""
+    def extract_crew_ids(self, crew_string, exclude_non_operating=False):
+        """
+        Extract crew IDs from crew string like '-NAME(ROLE) ID'
+        
+        Args:
+            crew_string: Raw crew string from CSV
+            exclude_non_operating: If True, exclude crew with * marker (deadhead/staff)
+        """
         pattern = r'\(([A-Z]{2})\)\s*(\d+)'
         matches = re.findall(pattern, crew_string)
-        return [(role, id) for role, id in matches]
+        
+        if not exclude_non_operating:
+            return [(role, id) for role, id in matches]
+        
+        # Filter out non-operating crew (marked with *)
+        result = []
+        for role, crew_id in matches:
+            # Check for * marker patterns: "*12345", "12345*", "NAME*(CP)"
+            if f'*{crew_id}' in crew_string or f'{crew_id}*' in crew_string:
+                continue
+            # Check if there's a * before the role in parentheses for this crew
+            pattern_with_star = rf'\*\s*\({role}\)\s*{crew_id}'
+            if re.search(pattern_with_star, crew_string):
+                continue
+            result.append((role, crew_id))
+        return result
+    
+    def _get_crew_name(self, crew_id):
+        """Lookup crew name from rolling_hours data"""
+        for rh in self.rolling_hours:
+            if rh.get('id') == crew_id:
+                return rh.get('name', f'ID:{crew_id}')
+        return f'ID:{crew_id}'
     
     def get_crew_set_key(self, crew_string):
         """Get a unique key for a crew set (sorted crew IDs)"""
@@ -281,6 +326,19 @@ class DataProcessor:
         
         return col_map
     
+    def _decode_content(self, content):
+        """Decode byte content using multiple encodings"""
+        if isinstance(content, str):
+            return content
+            
+        encodings = ['utf-8', 'cp1252', 'latin1']
+        for enc in encodings:
+            try:
+                return content.decode(enc)
+            except UnicodeDecodeError:
+                continue
+        return None
+
     def process_dayrep_csv(self, file_path=None, file_content=None, sync_db=True):
         """Process DayRepReport CSV file with operating day logic (04:00-03:59)
         Supports multiple CSV formats with auto-detection based on header"""
@@ -303,8 +361,10 @@ class DataProcessor:
         
         rows = []
         if file_content:
-            lines = file_content.decode('utf-8').split('\n')
-            rows = list(csv.reader(lines))
+            text_content = self._decode_content(file_content)
+            if text_content:
+                lines = text_content.splitlines()
+                rows = list(csv.reader(lines))
         else:
             # Check if any user uploads exist (User Mode vs Demo Mode)
             uploads_dir = self.data_dir / 'uploads'
@@ -322,9 +382,13 @@ class DataProcessor:
                 file_path = self.data_dir / 'DayRepReport15Jan2026.csv'
                 
             if file_path and file_path.exists():
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    rows = list(csv.reader(f))
+                content = self._read_file_safe(file_path)
+                if content:
+                    rows = list(csv.reader(content.splitlines()))
         
+        if not rows:
+            return 0
+
         # Auto-detect format from header row (usually row 2 or 3)
         col_map = None
         header_row_idx = None
@@ -402,7 +466,8 @@ class DataProcessor:
                     
                     # Extract crew (both total and by date) - only if crew data exists
                     if crew_string:
-                        crew_list = self.extract_crew_ids(crew_string)
+                        # Exclude non-operating crew
+                        crew_list = self.extract_crew_ids(crew_string, exclude_non_operating=True)
                         for role, crew_id in crew_list:
                             self.crew_to_regs[crew_id].add(reg)
                             self.crew_to_regs_by_date[operating_date][crew_id].add(reg)
@@ -454,8 +519,9 @@ class DataProcessor:
         self.ac_utilization = {}
         self.ac_utilization_by_date.clear()
         
+        content = None
         if file_content:
-            content = file_content.decode('utf-8')
+            content = self._decode_content(file_content)
         else:
             # check uploads
             uploads_dir = self.data_dir / 'uploads'
@@ -472,10 +538,9 @@ class DataProcessor:
             
             if file_path and file_path.exists():
                 content = self._read_file_safe(file_path)
-                if content is None:
-                    return {}
-            else:
-                return {}
+            
+        if not content:
+            return {}
         
         # Parse CSV properly
         rows = list(csv.reader(content.splitlines()))
@@ -651,8 +716,9 @@ class DataProcessor:
         """Process RolCrTotReport CSV file - Rolling crew hours totals"""
         self.rolling_hours = []
         
+        content = None
         if file_content:
-            content = file_content.decode('utf-8')
+            content = self._decode_content(file_content)
         else:
             # check uploads
             uploads_dir = self.data_dir / 'uploads'
@@ -667,14 +733,11 @@ class DataProcessor:
             else:
                 file_path = self.data_dir / 'RolCrTotReport.csv'
             
-            try:
-                if file_path and file_path.exists():
-                    content = self._read_file_safe(file_path)
-                    if content is None: return 0
-                else:
-                    return 0
-            except Exception:
-                return 0
+            if file_path and file_path.exists():
+                content = self._read_file_safe(file_path)
+
+        if not content:
+            return 0
         
         # Read CSV with header detection
         rows = list(csv.reader(content.splitlines()))
@@ -688,40 +751,62 @@ class DataProcessor:
         # Row 4: '', '', '', Block Time, Block Time
         # Data starts at row 5
         
-        # Find the row with 'ID' and 'Name' columns
+        # Find the row with 'Name' column (ID might be empty in header)
         data_start_idx = 0
-        for i, row in enumerate(rows[:10]):
-            row_lower = [c.lower().strip() for c in row]
-            if 'id' in row_lower and 'name' in row_lower:
-                # For this specific CSV format, data starts several rows after ID/Name header
-                # Skip the additional header rows (28-Day(s), Block Time)
+        header_found = False
+        header_map = {'id': 0, 'name': 1, 'seniority': 2, 'block_28day': 3, 'block_12month': 4}
+        
+        for i, row in enumerate(rows[:20]):
+            row_lower = [str(c).lower().strip() for c in row]
+            
+            # Check for specific patterns from the user's image
+            # Row usually has "Name" and maybe "Seniority" or "Last"
+            if 'name' in row_lower:
+                header_found = True
+                
+                # Dynamic column mapping
+                for idx, col in enumerate(row_lower):
+                    if 'id' == col: header_map['id'] = idx
+                    elif 'name' in col: header_map['name'] = idx
+                    elif 'seniority' in col: header_map['seniority'] = idx
+                
+                # Start looking for data from next row
                 data_start_idx = i + 1
-                # Skip any rows that don't start with a digit (more header rows)
-                while data_start_idx < len(rows) and len(rows[data_start_idx]) > 0:
-                    first_cell = rows[data_start_idx][0].strip()
-                    if first_cell and first_cell[0].isdigit():
-                        break
+                
+                # Check next rows for Block Time headers (28-day, 12-month)
+                # These might be in row i+1 or i+2
+                for j in range(1, 4):
+                    if i + j < len(rows):
+                        sub_row = [str(c).lower().strip() for c in rows[i+j]]
+                        for idx, col in enumerate(sub_row):
+                            if '28-day' in col: header_map['block_28day'] = idx
+                            elif '12-month' in col: header_map['block_12month'] = idx
+                
+                # Skip header rows (e.g., "28-Day(s)", "Block Time")
+                # Look ahead for a row where the first column is a digit (Crew ID)
+                while data_start_idx < len(rows):
+                    if len(rows[data_start_idx]) > 0:
+                        first_cell = str(rows[data_start_idx][header_map['id']]).strip()
+                        if first_cell and first_cell.isdigit():
+                            break
                     data_start_idx += 1
                 break
         
-        # Use fixed column mapping for RolCrTotReport format:
-        # Column 0: ID, Column 1: Name, Column 2: Seniority, Column 3: 28-Day Block, Column 4: 12-Month Block
-        header_map = {'id': 0, 'name': 1, 'seniority': 2, 'block_28day': 3, 'block_12month': 4}
-
         for row in rows[data_start_idx:]:
             if len(row) < 4: continue
             
             # Safe extraction
             try:
-                crew_id = row[header_map['id']].strip()
+                # Ensure index exists
+                crew_id = row[header_map['id']].strip() if header_map['id'] < len(row) else ''
                 if not crew_id or not crew_id[0].isdigit(): continue
                 
-                name = row[header_map['name']].strip()
-                seniority = row[header_map['seniority']].strip() if len(row) > 2 else '0'
+                name = row[header_map['name']].strip() if header_map['name'] < len(row) else ''
+                seniority = row[header_map['seniority']].strip() if header_map['seniority'] < len(row) else '0'
                 
                 # Get block hours from fixed column positions
-                b28 = row[header_map['block_28day']].strip() if len(row) > 3 else '0:00'
-                b12m = row[header_map['block_12month']].strip() if len(row) > 4 else '0:00'
+                b28 = row[header_map['block_28day']].strip() if header_map['block_28day'] < len(row) else '0:00'
+                b12m = row[header_map['block_12month']].strip() if header_map['block_12month'] < len(row) else '0:00'
                 
                 # Parse hours from HH:MM format
                 def parse_hours(time_str):
@@ -745,6 +830,15 @@ class DataProcessor:
                 else:
                     status = 'normal'
                 
+                # NEW: Determine 12-month status based on 1000 hours limit
+                percentage_12m = (hours_12month / 1000) * 100
+                if percentage_12m >= 95:
+                    status_12m = 'critical'
+                elif percentage_12m >= 85:
+                    status_12m = 'warning'
+                else:
+                    status_12m = 'normal'
+                
                 self.rolling_hours.append({
                     'id': crew_id,
                     'name': name,
@@ -754,7 +848,9 @@ class DataProcessor:
                     'hours_28day': round(hours_28day, 2),
                     'hours_12month': round(hours_12month, 2),
                     'percentage': round(percentage, 1),
-                    'status': status
+                    'percentage_12m': round(percentage_12m, 1),  # NEW
+                    'status': status,
+                    'status_12m': status_12m  # NEW: 12-month status
                 })
             except Exception:
                 continue
@@ -776,7 +872,9 @@ class DataProcessor:
                     'hours_28day': item.get('hours_28day', 0),
                     'hours_12month': item.get('hours_12month', 0),
                     'percentage': item.get('percentage', 0),
-                    'status': item.get('status', 'normal')
+                    'percentage_12m': item.get('percentage_12m', 0),
+                    'status': item.get('status', 'normal'),
+                    'status_12m': item.get('status_12m', 'normal')
                 })
             db.insert_rolling_hours(hours_data)
             
@@ -792,8 +890,9 @@ class DataProcessor:
             'summary': {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
         }
         
+        content = None
         if file_content:
-            content = file_content.decode('utf-8')
+            content = self._decode_content(file_content)
         else:
             # check uploads
             uploads_dir = self.data_dir / 'uploads'
@@ -808,14 +907,11 @@ class DataProcessor:
             else:
                 file_path = self.data_dir / 'Crew schedule 15Jan(standby,callsick, fatigue).csv'
             
-            try:
-                if file_path and file_path.exists():
-                    content = self._read_file_safe(file_path)
-                    if content is None: return 0
-                else:
-                    return 0
-            except Exception:
-                return 0
+            if file_path and file_path.exists():
+                content = self._read_file_safe(file_path)
+
+        if not content:
+            return 0
         
         # Reset data
         self.crew_schedule['summary'] = {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
@@ -895,6 +991,37 @@ class DataProcessor:
                      data_start_idx = i
                      break
         
+        # Prepare report date string for Standard Mode
+        # usage: if we found a date in header, use it for all rows
+        report_date_str = ""
+        if report_year and report_month:
+            # Try to find a specific day from the header date line or default to today?
+            # The regex detected d_day.
+            try:
+                # We need to access the match from the loop above. 
+                # Re-scanning cleanly here or using variables from above.
+                # Let's rely on the variables from the header detection loop.
+                # However, they are local variables inside the loop.
+                # Let's extract them again properly.
+                pass
+            except:
+                pass
+                
+        # Re-extract date for robustness
+        current_report_date = None
+        for i in range(min(5, len(rows))):
+            line_str = ",".join(rows[i])
+            date_match = re.search(r'(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})', line_str)
+            if date_match:
+                try:
+                    d_day, d_month_str, d_year = date_match.groups()
+                    d_month = datetime.strptime(d_month_str, "%b").month
+                    # Format: DD/MM/YY
+                    current_report_date = f"{int(d_day):02d}/{d_month:02d}/{str(d_year)[-2:]}"
+                    break
+                except:
+                    pass
+        
         # Process Rows
         for row in rows[data_start_idx:]:
             if len(row) < 2: continue
@@ -949,16 +1076,23 @@ class DataProcessor:
 
                     if sl_val > 0:
                         self.crew_schedule['summary']['SL'] += sl_val
+                        if current_report_date:
+                            self.crew_schedule_by_date[current_report_date]['SL'] += sl_val
+                            
                     if csl_val > 0:
                         self.crew_schedule['summary']['CSL'] += csl_val
+                        if current_report_date:
+                            self.crew_schedule_by_date[current_report_date]['CSL'] += csl_val
+
                     if sby_val > 0:
                         self.crew_schedule['summary']['SBY'] += sby_val
+                        if current_report_date:
+                            self.crew_schedule_by_date[current_report_date]['SBY'] += sby_val
+
                     if osby_val > 0:
                         self.crew_schedule['summary']['OSBY'] += osby_val
-                    
-                    # Also populate by_date if we can guess the date?
-                    # Standard list usually doesn't have specific date columns, it's a summary.
-                    # We leave by_date empty or maybe assign to ALL dates? No, safest is leave empty.
+                        if current_report_date:
+                            self.crew_schedule_by_date[current_report_date]['OSBY'] += osby_val
                     
                 except Exception:
                     continue
@@ -992,13 +1126,30 @@ class DataProcessor:
     
     def calculate_metrics(self, filter_date=None):
         """Calculate all dashboard KPIs, optionally filtered by date"""
+        
+        # Normalize filter_date to match dictionary keys (DD/MM/YY)
+        # Frontend sends YYYY-MM-DD, but we store as DD/MM/YY
+        normalized_date = filter_date
+        if filter_date and '-' in filter_date:
+            try:
+                # Convert YYYY-MM-DD to DD/MM/YY
+                from datetime import datetime as dt
+                date_obj = dt.strptime(filter_date, '%Y-%m-%d')
+                normalized_date = date_obj.strftime('%d/%m/%y')
+                print(f"Normalized filter_date: {filter_date} -> {normalized_date}")
+            except Exception as e:
+                print(f"Error normalizing date: {e}")
+        
+        # Use normalized date for lookups
+        lookup_date = normalized_date if normalized_date else filter_date
+
         # Determine which data to use based on filter
-        if filter_date and filter_date in self.flights_by_date:
-            flights = self.flights_by_date[filter_date]
-            crew_to_regs = self.crew_to_regs_by_date[filter_date]
-            reg_flight_hours = self.reg_flight_hours_by_date[filter_date]
-            reg_flight_count = self.reg_flight_count_by_date[filter_date]
-            crew_group_rotations = self.crew_group_rotations_by_date[filter_date]
+        if lookup_date and lookup_date in self.flights_by_date:
+            flights = self.flights_by_date[lookup_date]
+            crew_to_regs = self.crew_to_regs_by_date[lookup_date]
+            reg_flight_hours = self.reg_flight_hours_by_date[lookup_date]
+            reg_flight_count = self.reg_flight_count_by_date[lookup_date]
+            crew_group_rotations = self.crew_group_rotations_by_date[lookup_date]
         else:
             flights = self.flights
             crew_to_regs = self.crew_to_regs
@@ -1012,8 +1163,8 @@ class DataProcessor:
         utilization_data = {}
         
         # Priority 1: Use SacutilReport data for filtered date
-        if filter_date and filter_date in self.ac_utilization_by_date:
-            utilization_data = self.ac_utilization_by_date[filter_date]
+        if lookup_date and lookup_date in self.ac_utilization_by_date:
+            utilization_data = self.ac_utilization_by_date[lookup_date]
         # Priority 2: Use SacutilReport total data for "All Dates"
         elif self.ac_utilization:
             utilization_data = self.ac_utilization
@@ -1086,39 +1237,37 @@ class DataProcessor:
         total_flights = len(flights)
         total_crew = len(crew_to_regs)
         
-        # Average flight hours per aircraft
+        # 1. Metric: Average flight hours per aircraft (A/C Utilization)
+        # Formula: Total Actual Block Hours / Total Active Aircraft
         avg_flight_hours = 0
-        if reg_flight_hours:
-            avg_flight_hours = sum(reg_flight_hours.values()) / len(reg_flight_hours)
+        total_block_hours = sum(reg_flight_hours.values()) if reg_flight_hours else 0
+        active_aircraft_count = len(reg_flight_hours)
         
-        # Calculate Crew Rotations (group-based)
-        # A rotation is when a crew GROUP flies on multiple different aircraft
-        # Count rotations as: (number of unique REGs - 1) for each group that has 2+ REGs
+        if active_aircraft_count > 0:
+            avg_flight_hours = total_block_hours / active_aircraft_count
+        
+        # 2. Metric: Crew Rotations
         rotation_count = 0
         rotation_details = []
         
         for crew_set_key, regs_list in crew_group_rotations.items():
             unique_regs_for_group = list(set(regs_list))
             if len(unique_regs_for_group) >= 2:
-                # This group had a rotation (changed aircraft)
-                rotation_count += 1  # Count as 1 rotation event per group
+                rotation_count += 1
                 
-                # Get role info from first crew member
                 if crew_set_key and len(crew_set_key) > 0:
                     first_crew_id = crew_set_key[0]
                     role = self.crew_roles.get(first_crew_id, 'UNK')
                     
-                    # Find flight numbers for this crew group
                     group_flights = []
                     for f in flights:
-                        # Check if this flight was flown by this exact crew group
-                        # We need to re-generate the key from the flight's crew string
                         flight_crew_key = self.get_crew_set_key(f.get('crew', ''))
                         if flight_crew_key == crew_set_key:
                              group_flights.append(f.get('flt', ''))
                     
                     rotation_details.append({
                         'crew_ids': list(crew_set_key),
+                        'crew_names': [self._get_crew_name(cid) for cid in crew_set_key],
                         'crew_count': len(crew_set_key),
                         'role': role,
                         'regs': sorted(unique_regs_for_group),
@@ -1126,33 +1275,21 @@ class DataProcessor:
                         'rotations': len(unique_regs_for_group) - 1
                     })
         
-        # Sort rotation details by number of rotations (descending)
         rotation_details.sort(key=lambda x: (-x['rotations'], -x['crew_count']))
         
-        # Role counts (recalculate based on filtered data)
+        # 3. Role Counts & Operating Crew List
         role_counts = defaultdict(int)
         counted_crew = set()
         operating_crew = []
         
         for f in flights:
-            crew_list = self.extract_crew_ids(f.get('crew', ''))
+            crew_list = self.extract_crew_ids(f.get('crew', ''), exclude_non_operating=True)
             for role, crew_id in crew_list:
                 if crew_id not in counted_crew:
                     role_counts[role] += 1
                     counted_crew.add(crew_id)
                     
-                    # Find name if possible (from rolling hours or other sources?)
-                    # For now we only have ID and Role from DayRep string: "-NAME(ROLE) ID"
-                    # Wait, extract_crew_ids logic in line 83: pattern = r'\(([A-Z]{2})\)\s*(\d+)'
-                    # It captures Role and ID. The NAME is before the parens.
-                    # I need to improve extraction or parse name here.
-                    
-                    # Re-extract name from raw string
-                    # Sample: "-NGUYEN VAN A(CP) 12345"
-                    # Regex to capture Name?
-                    # Let's simple use ID and Role for now, or try to get name from self.rolling_hours lookup if available
                     name = "Unknown"
-                    # Try lookup in rolling hours
                     for rh in self.rolling_hours:
                         if rh['id'] == crew_id:
                             name = rh['name']
@@ -1164,11 +1301,10 @@ class DataProcessor:
                         'name': name
                     })
         
-        # Sort by Role (CP, FO, PU, FA)
         role_order = {'CP': 1, 'FO': 2, 'PU': 3, 'FA': 4}
         operating_crew.sort(key=lambda x: (role_order.get(x['role'], 99), x['name']))
         
-        # Aircraft details
+        # 4. Aircraft Data
         aircraft_data = []
         for reg in sorted(reg_flight_hours.keys()):
             hours = reg_flight_hours[reg]
@@ -1180,22 +1316,48 @@ class DataProcessor:
                 'avg_per_flight': round(hours / count, 1) if count > 0 else 0
             })
         
-        # Calculate rolling hours statistics
+        # 5. Safety Compliance Metrics (Rolling Hours)
+        
+        # List 1: 28-Day Limits (All)
+        # Deep copy to avoid modifying original list ref if needed, or just use slice
+        # Ensure it's sorted by 28-day hours descending
+        compliance_28d_all = sorted(
+            self.rolling_hours, 
+            key=lambda x: x.get('hours_28day', 0), 
+            reverse=True
+        )
+        
+        # List 2: Top 20 High-Intensity (28 Days)
+        compliance_28d_top20 = compliance_28d_all[:20]
+        
+        # List 3: 12-Month Limits (All)
+        # Sort by 12-month hours descending
+        compliance_12m_all = sorted(
+            self.rolling_hours,
+            key=lambda x: x.get('hours_12month', 0),
+            reverse=True
+        )
+        
+        # List 4: Top 20 High-Intensity (12 Months)
+        compliance_12m_top20 = compliance_12m_all[:20]
+        
+        # Stats counts
         rolling_stats = {'normal': 0, 'warning': 0, 'critical': 0}
         for crew in self.rolling_hours:
-            rolling_stats[crew['status']] += 1
-        
-        # Calculate total block hours
-        total_block_hours = sum(reg_flight_hours.values()) if reg_flight_hours else 0
-        
-        # Build the data dictionary
+            rolling_stats[crew.get('status', 'normal')] += 1
+            
+        rolling_stats_12m = {'normal': 0, 'warning': 0, 'critical': 0}
+        for crew in self.rolling_hours:
+            rolling_stats_12m[crew.get('status_12m', 'normal')] += 1
+            
+        # Build Data Dict
         data = {
             'summary': {
-                'total_aircraft': len(set(f['reg'] for f in flights if f['reg'])),
-                'total_flights': total_flights,
-                'total_crew': total_crew,
-                'crew_rotation_count': rotation_count,  # Renamed from multi_reg_count
-                'avg_flight_hours': round(avg_flight_hours, 1),
+                'total_aircraft': active_aircraft_count,
+                'total_flights': len(flights),
+                'total_crew': len(counted_crew), # Use counted_crew (excluded *)
+                'crew_rotation_count': rotation_count,
+                'avg_flight_hours': round(avg_flight_hours, 1), # This is the A/C Util number
                 'total_block_hours': round(total_block_hours, 1)
             },
             'available_dates': self.available_dates,
@@ -1203,20 +1365,27 @@ class DataProcessor:
             'crew_roles': dict(role_counts),
             'operating_crew': operating_crew,
             'aircraft': aircraft_data,
-            'crew_rotations': rotation_details[:20],  # Top 20 rotation groups
+            'crew_rotations': rotation_details[:20],
             'utilization': utilization_data,
-            'rolling_hours': self.rolling_hours[:50],  # Top 50
+            
+            # New distinct lists for UI
+            'compliance_28d_all': compliance_28d_all,
+            'compliance_28d_top20': compliance_28d_top20,
+            'compliance_12m_all': compliance_12m_all,
+            'compliance_12m_top20': compliance_12m_top20,
+            
             'rolling_stats': rolling_stats,
+            'rolling_stats_12m': rolling_stats_12m,
             'crew_schedule': self.crew_schedule.copy() if isinstance(self.crew_schedule, dict) else {'summary': {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}},
             'last_updated': datetime.now().isoformat()
         }
         
         # Override crew schedule summary if filtered by date
-        if filter_date:
+        if lookup_date:
             print(f"DEBUG: Available Keys: {list(self.crew_schedule_by_date.keys())}")
             
-        if filter_date and filter_date in self.crew_schedule_by_date:
-            daily_stats = self.crew_schedule_by_date[filter_date]
+        if lookup_date and lookup_date in self.crew_schedule_by_date:
+            daily_stats = self.crew_schedule_by_date[lookup_date]
             # Verify if this date actually has data (non-zero)
             if sum(daily_stats.values()) > 0:
                 data['crew_schedule']['summary'] = daily_stats
