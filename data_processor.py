@@ -41,6 +41,10 @@ class DataProcessor:
         self.crew_group_rotations = defaultdict(list)  # crew_set -> list of REGs
         self.crew_group_rotations_by_date = defaultdict(lambda: defaultdict(list))  # date -> crew_set_key -> list of REGs
         
+        # Optimization maps
+        self.crew_name_map = {}
+        self.reg_types = {}
+        
         # Try to load from Supabase first
         if db.is_connected():
             print("Connected to Supabase. Loading data...")
