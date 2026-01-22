@@ -850,7 +850,11 @@ class DataProcessor:
                 hours_12month = parse_hours(b12m)
                 
                 # Determine status based on 28-day limit (100 hours)
-                percentage = (hours_28day / 100) * 100
+                try:
+                    percentage = round((hours_28day / 100) * 100, 1)
+                    if percentage > 1000: percentage = 100.0 # Cap outliers
+                except: percentage = 0.0
+
                 if percentage >= 95:
                     status = 'critical'
                 elif percentage >= 85:
@@ -859,7 +863,11 @@ class DataProcessor:
                     status = 'normal'
                 
                 # NEW: Determine 12-month status based on 1000 hours limit
-                percentage_12m = (hours_12month / 1000) * 100
+                try:
+                    percentage_12m = round((hours_12month / 1000) * 100, 1)
+                    if percentage_12m > 1000: percentage_12m = 100.0 # Cap outliers
+                except: percentage_12m = 0.0
+                
                 if percentage_12m >= 95:
                     status_12m = 'critical'
                 elif percentage_12m >= 85:
@@ -875,8 +883,8 @@ class DataProcessor:
                     'block_12month': b12m,
                     'hours_28day': round(hours_28day, 2),
                     'hours_12month': round(hours_12month, 2),
-                    'percentage': round(percentage, 1),
-                    'percentage_12m': round(percentage_12m, 1),  # NEW
+                    'percentage': percentage,
+                    'percentage_12m': percentage_12m,  # NEW
                     'status': status,
                     'status_12m': status_12m  # NEW: 12-month status
                 })
@@ -1040,18 +1048,38 @@ class DataProcessor:
                 
         # Re-extract date for robustness
         current_report_date = None
-        for i in range(min(5, len(rows))):
-            line_str = ",".join(rows[i])
-            date_match = re.search(r'(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})', line_str)
-            if date_match:
+        for i in range(min(10, len(rows))): # Scan first 10 lines
+            line_str = " ".join(rows[i])
+            
+            # Format 1: 15 Jan 2026 or 15 JAN 2026 (spaces)
+            match1 = re.search(r'(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})', line_str)
+            if match1:
                 try:
-                    d_day, d_month_str, d_year = date_match.groups()
-                    d_month = datetime.strptime(d_month_str, "%b").month
-                    # Format: DD/MM/YY
+                    d_day, d_month_str, d_year = match1.groups()
+                    d_month = datetime.strptime(d_month_str[:3], "%b").month
                     current_report_date = f"{int(d_day):02d}/{d_month:02d}/{str(d_year)[-2:]}"
                     break
-                except:
-                    pass
+                except: pass
+                
+            # Format 2: 15-Jan-2026 (dashes)
+            match2 = re.search(r'(\d{1,2})-([A-Za-z]{3})-(\d{4})', line_str)
+            if match2:
+                try:
+                    d_day, d_month_str, d_year = match2.groups()
+                    d_month = datetime.strptime(d_month_str[:3], "%b").month
+                    current_report_date = f"{int(d_day):02d}/{d_month:02d}/{str(d_year)[-2:]}"
+                    break
+                except: pass
+
+            # Format 3: 15/01/2026 or 15/01/26 (slashes)
+            match3 = re.search(r'(\d{1,2})/(\d{1,2})/(\d{2,4})', line_str)
+            if match3:
+                try:
+                    d_day, d_month, d_year = match3.groups()
+                    if len(d_year) == 4: d_year = d_year[-2:]
+                    current_report_date = f"{int(d_day):02d}/{int(d_month):02d}/{d_year}"
+                    break
+                except: pass
         
         # Process Rows
         for row in rows[data_start_idx:]:
