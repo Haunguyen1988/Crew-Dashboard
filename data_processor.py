@@ -313,32 +313,10 @@ class DataProcessor:
             elif 'sta' in col: col_map['sta'] = idx
             elif 'crew' in col: col_map['crew'] = idx
             
-        return col_map
-        
-        # Check header to detect format
-        header_lower = [h.lower().strip() for h in header_row]
-        
-        # Try to find column indices from header
-        for i, h in enumerate(header_lower):
-            if h == 'date':
-                col_map['date'] = i
-            elif h == 'reg':
-                col_map['reg'] = i
-            elif h == 'flt':
-                col_map['flt'] = i
-            elif h == 'dep':
-                col_map['dep'] = i
-            elif h == 'arr':
-                col_map['arr'] = i
-            elif h == 'std':
-                col_map['std'] = i
-            elif h == 'sta':
-                col_map['sta'] = i
-            elif h == 'crew':
-                col_map['crew'] = i
-        
-        # Check if crew column exists
-        col_map['has_crew'] = 'crew' in header_lower or len(header_row) > 14
+        # Check if crew column exists (either explicitly found or by length heuristic)
+        # Verify if 'crew' index was actually updated from default 14
+        found_crew_col = 'crew' in [c.lower() for c in row_lower if 'crew' in c.lower()]
+        col_map['has_crew'] = found_crew_col or (col_map['crew'] < len(header_row))
         
         return col_map
     
@@ -453,9 +431,8 @@ class DataProcessor:
                     # If columns are: Date, AC Type, Reg, Flt... then Reg is index 2.
                     # We need to ensure we capture AC Type.
                     
-                    # Let's assume there is an 'ac' column in header or index 1 if standard.
-                    # I will update detect_csv_format to look for 'ac' or 'type'.
-                    pass
+                    # Capture AC Type
+
                     
                     if 'ac' in col_map and col_map['ac'] < len(row):
                          ac_type = row[col_map['ac']].strip()
