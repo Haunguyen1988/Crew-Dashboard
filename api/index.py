@@ -88,7 +88,7 @@ def load_supabase_data(filter_date=None):
         if not flights:
             return get_default_data(), available_dates
         
-        # Process flights
+        # 1. Process flights (Memory State Update)
         processor.flights = flights
         processor.available_dates = available_dates
         processor.crew_to_regs.clear()
@@ -115,29 +115,31 @@ def load_supabase_data(filter_date=None):
                         processor.crew_roles[crew_id] = role
             except:
                 continue
-        
+                
+        # 2. Populate Rolling Hours from DB (Critical for calculate_metrics)
+        try:
+            raw_rolling = db.get_rolling_hours() or []
+            # Ensure correct types if DB returns strings for numbers
+            processor.rolling_hours = []
+            for item in raw_rolling:
+                # Calculate percentages if missing (sometimes DB view differs)
+                # But mostly just pass through
+                processor.rolling_hours.append(item)
+                
+            print(f"[INFO] Loaded {len(processor.rolling_hours)} rolling records from DB")
+            
+        except Exception as e:
+            print(f"[WARN] Failed to load rolling hours: {e}")
+
+        # 3. Calculate Metrics (Now uses populated flight & rolling data)
         metrics = processor.calculate_metrics(filter_date)
         
-        # Add Supabase-specific data
+        # 4. Add additional DB-only data (Schedule Summary)
         try:
-            # 1. Rolling Hours
-            all_rolling = db.get_rolling_hours() or []
-            metrics['rolling_hours'] = all_rolling[:20]
-            
-            # Recalculate rolling_stats locally from the full list
-            stats = {'normal': 0, 'warning': 0, 'critical': 0}
-            for r in all_rolling:
-                status = r.get('status', 'normal').lower()
-                if status in stats:
-                    stats[status] += 1
-            metrics['rolling_stats'] = stats
-
-            # 2. Crew Schedule Summary
-            # Wrap in summary to match template expectation: data.crew_schedule.summary
             summary_data = db.get_crew_schedule_summary(filter_date) or {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
             metrics['crew_schedule'] = {'summary': summary_data}
         except Exception as e:
-            print(f"Error processing Supabase data: {e}")
+             print(f"[WARN] Failed to load schedule: {e}")
         
         return metrics, available_dates
     except Exception as e:
