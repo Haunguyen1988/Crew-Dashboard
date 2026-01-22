@@ -168,6 +168,7 @@ def index():
             'utilization': metrics.get('utilization', {}),
             'rolling_hours': metrics.get('rolling_hours', []),
             'rolling_stats': metrics.get('rolling_stats', data['rolling_stats']),
+            'rolling_stats_12m': metrics.get('rolling_stats_12m', {'normal': 0, 'warning': 0, 'critical': 0}),
             'crew_schedule': metrics.get('crew_schedule', data['crew_schedule']),
             
             # Pass compliance lists
