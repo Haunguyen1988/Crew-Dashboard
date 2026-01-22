@@ -4,6 +4,7 @@ Handles CSV parsing and KPI calculations
 """
 
 import csv
+import os
 import re
 import json
 from collections import defaultdict
@@ -1080,6 +1081,21 @@ class DataProcessor:
                     current_report_date = f"{int(d_day):02d}/{int(d_month):02d}/{d_year}"
                     break
                 except: pass
+
+        # Fallback: Extract date from FILENAME if not found in content
+        if not current_report_date and file_path:
+             filename = os.path.basename(str(file_path))
+             # Search for '15Jan' or '15Jan2026' or '2026-01-15'
+             try:
+                 # Match 15Jan or 15Jan26
+                 fname_match = re.search(r'(\d{1,2})([A-Za-z]{3})', filename)
+                 if fname_match:
+                     d_day, d_month_str = fname_match.groups()
+                     d_month = datetime.strptime(d_month_str, "%b").month
+                     # Assume current year if not present
+                     d_year = str(datetime.now().year)[-2:]
+                     current_report_date = f"{int(d_day):02d}/{d_month:02d}/{d_year}"
+             except: pass
         
         # Process Rows
         for row in rows[data_start_idx:]:
