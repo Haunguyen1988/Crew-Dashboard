@@ -257,11 +257,8 @@ class DataProcessor:
         return result
     
     def _get_crew_name(self, crew_id):
-        """Lookup crew name from rolling_hours data"""
-        for rh in self.rolling_hours:
-            if rh.get('id') == crew_id:
-                return rh.get('name', f'ID:{crew_id}')
-        return f'ID:{crew_id}'
+        """Lookup crew name from rolling_hours data (O(1) lookup)"""
+        return self.crew_name_map.get(crew_id, f'ID:{crew_id}')
     
     def get_crew_set_key(self, crew_string):
         """Get a unique key for a crew set (sorted crew IDs)"""
@@ -296,8 +293,23 @@ class DataProcessor:
             'arr': 4,
             'std': 5,
             'sta': 6,
-            'crew': 14
+            'crew': 14,
+            'ac': -1 # Default no AC column
         }
+        
+        row_lower = [str(c).lower().strip() for c in header_row]
+        for idx, col in enumerate(row_lower):
+            if 'date' in col: col_map['date'] = idx
+            elif 'reg' in col: col_map['reg'] = idx
+            elif 'ac' == col or 'type' in col: col_map['ac'] = idx # Detect AC/Type column
+            elif 'flt' in col or 'flight' in col: col_map['flt'] = idx
+            elif 'dep' in col: col_map['dep'] = idx
+            elif 'arr' in col: col_map['arr'] = idx
+            elif 'std' in col: col_map['std'] = idx
+            elif 'sta' in col: col_map['sta'] = idx
+            elif 'crew' in col: col_map['crew'] = idx
+            
+        return col_map
         
         # Check header to detect format
         header_lower = [h.lower().strip() for h in header_row]
@@ -356,6 +368,10 @@ class DataProcessor:
         # New: Track crew rotations at group level
         self.crew_group_rotations = defaultdict(list)  # crew_set -> list of REGs
         self.crew_group_rotations_by_date = defaultdict(lambda: defaultdict(list))
+        
+        # New: Optimization maps
+        self.crew_name_map = {}  # ID -> Name
+        self.reg_types = {}      # REG -> AC Type
         
         unique_dates = set()
         
@@ -418,6 +434,30 @@ class DataProcessor:
                 date_str = row[col_map['date']].strip()
                 # Check if first column looks like a date (contains / and digits)
                 if '/' in date_str and any(c.isdigit() for c in date_str):
+                    reg = row[col_map['reg']].strip() if col_map['reg'] < len(row) else ''
+                    
+                    # Capture AC Type if available (usually in column 1 in detected format)
+                    # col_map usually has reg at 1, flt at 2.
+                    # Wait, detect_csv_format uses: 'date': 0, 'reg': 1, 'flt': 2...
+                    # User said "A/C type sẽ lấy thông tin từ Dayrepreport".
+                    # Let's check DayRep structure. 
+                    # Usually: Date, AC, Reg, Flt... OR Date, Reg, Flt...
+                    # If AC column exists, it should be mapped.
+                    # Current detect_csv_format (line 405) defaults to: 'date': 0, 'reg': 1, 'flt': 2
+                    # If there's an AC Type column, we need to detect it.
+                    # Let's check detect_csv_format implementation (line 288).
+                    # If columns are: Date, AC Type, Reg, Flt... then Reg is index 2.
+                    # We need to ensure we capture AC Type.
+                    
+                    # Let's assume there is an 'ac' column in header or index 1 if standard.
+                    # I will update detect_csv_format to look for 'ac' or 'type'.
+                    pass
+                    
+                    if 'ac' in col_map and col_map['ac'] < len(row):
+                         ac_type = row[col_map['ac']].strip()
+                         if reg and ac_type:
+                             self.reg_types[reg] = ac_type
+                    
                     reg = row[col_map['reg']].strip() if col_map['reg'] < len(row) else ''
                     
                     # Skip rows without REG (some dates may not have aircraft assigned yet)
@@ -625,6 +665,13 @@ class DataProcessor:
             # Normalize AC type (strip leading 'A' if present for consistency)
             if ac_type.startswith('A') and len(ac_type) > 1 and ac_type[1:].isdigit():
                 ac_type = ac_type[1:]
+                
+            # Store AC Type for this REG if we have reg info
+            # NOTE: SacutilReport has AC Type but NOT specific REG (e.g. VN-A500).
+            # DayRepReport HAS Reg and AC Type. We should capture it there.
+            # But here in SacutilReport, we only have aggregate stats per AC Type.
+            # So we can't map Reg -> Type here.
+            # We must do it in process_dayrep_csv.
             
             dom_block = parse_time_to_min(row[2].strip()) if len(row) > 2 else 0
             int_block = parse_time_to_min(row[3].strip()) if len(row) > 3 else 0
@@ -852,6 +899,9 @@ class DataProcessor:
                     'status': status,
                     'status_12m': status_12m  # NEW: 12-month status
                 })
+                
+                # Populate lookup map for O(1) access
+                self.crew_name_map[crew_id] = name
             except Exception:
                 continue
         
@@ -1289,11 +1339,7 @@ class DataProcessor:
                     role_counts[role] += 1
                     counted_crew.add(crew_id)
                     
-                    name = "Unknown"
-                    for rh in self.rolling_hours:
-                        if rh['id'] == crew_id:
-                            name = rh['name']
-                            break
+                    name = self._get_crew_name(crew_id)
                     
                     operating_crew.append({
                         'id': crew_id,
@@ -1311,6 +1357,7 @@ class DataProcessor:
             count = reg_flight_count[reg]
             aircraft_data.append({
                 'reg': reg,
+                'ac_type': self.reg_types.get(reg, 'Unknown'),
                 'total_hours': round(hours, 1),
                 'flights': count,
                 'avg_per_flight': round(hours / count, 1) if count > 0 else 0

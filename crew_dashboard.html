@@ -843,7 +843,57 @@
         </div>
     </div>
 
+    <!-- Aircraft Details Modal -->
+    <div id="aircraftModal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; overflow-y: auto;">
+        <div
+            style="background: var(--bg-secondary); padding: 2rem; border-radius: 16px; max-width: 800px; width: 95%; border: 1px solid var(--border-color); margin: 2rem auto; max-height: 80vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="color: var(--text-primary);">✈️ Active Aircraft Details</h3>
+                <button onclick="closeAircraftModal()"
+                    style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">×</button>
+            </div>
+
+            <div style="margin-bottom: 1rem; display: flex; align-items: center; gap: 1rem;">
+                <label style="color: var(--text-secondary);">Filter by Type:</label>
+                <select id="acTypeFilter" onchange="filterAircraftTable()"
+                    style="background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 6px;">
+                    <option value="ALL">All Types</option>
+                    <!-- Options populated by JS -->
+                </select>
+            </div>
+
+            <p style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                List of all aircraft operating/assigned on selected period.
+            </p>
+
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Registration</th>
+                        <th>Type</th>
+                        <th>Block Hours</th>
+                        <th>Flights</th>
+                    </tr>
+                </thead>
+                <tbody id="aircraftTableBody">
+                    {% for ac in data.aircraft %}
+                    <tr class="ac-row" data-type="{{ ac.ac_type }}">
+                        <td>{{ loop.index }}</td>
+                        <td>{{ ac.reg }}</td>
+                        <td>{{ ac.ac_type }}</td>
+                        <td>{{ ac.total_hours }}</td>
+                        <td>{{ ac.flights }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <!-- Crew 28-Day History Modal (Drill-down) -->
+
     <div id="crewHistoryModal"
         style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; overflow-y: auto;">
         <div
@@ -913,10 +963,10 @@
         <!-- Executive Summary Section -->
         <section class="section-title">Executive Summary</section>
         <div class="executive-grid">
-            <div class="card metric-card">
+            <div class="card metric-card" onclick="openAircraftModal()" style="cursor: pointer;">
                 <div class="metric-value">{{ data.summary.total_aircraft }}</div>
                 <div class="metric-label">Total Aircraft Flying</div>
-                <span class="metric-trend up">REGs operating today</span>
+                <span class="metric-trend up">REGs operating today (Click to view)</span>
             </div>
             <div class="card metric-card">
                 <div class="metric-value">{{ data.summary.total_flights }}</div>
@@ -1334,6 +1384,50 @@
                 indicator.style.display = 'none';
                 window.location.href = '/?source=csv' + (filterDate ? '&date=' + filterDate : '');
             }
+        }
+
+        // Aircraft Modal Functions
+        function openAircraftModal() {
+            document.getElementById('aircraftModal').style.display = 'flex';
+            populateAircraftFilter();
+        }
+
+        function closeAircraftModal() {
+            document.getElementById('aircraftModal').style.display = 'none';
+        }
+
+        function populateAircraftFilter() {
+            const select = document.getElementById('acTypeFilter');
+            if (select.options.length > 1) return; // Already populated
+
+            const rows = document.querySelectorAll('.ac-row');
+            const types = new Set();
+            rows.forEach(row => {
+                const type = row.getAttribute('data-type');
+                if (type && type !== 'Unknown') types.add(type);
+            });
+
+            // sort types
+            Array.from(types).sort().forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                select.appendChild(option);
+            });
+        }
+
+        function filterAircraftTable() {
+            const filter = document.getElementById('acTypeFilter').value;
+            const rows = document.querySelectorAll('.ac-row');
+
+            rows.forEach(row => {
+                const type = row.getAttribute('data-type');
+                if (filter === 'ALL' || type === filter) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
         }
 
         // Close modals on outside click
