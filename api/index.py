@@ -168,7 +168,13 @@ def index():
             'utilization': metrics.get('utilization', {}),
             'rolling_hours': metrics.get('rolling_hours', []),
             'rolling_stats': metrics.get('rolling_stats', data['rolling_stats']),
-            'crew_schedule': metrics.get('crew_schedule', data['crew_schedule'])
+            'crew_schedule': metrics.get('crew_schedule', data['crew_schedule']),
+            
+            # Pass compliance lists
+            'compliance_28d_all': metrics.get('compliance_28d_all', []),
+            'compliance_28d_top20': metrics.get('compliance_28d_top20', []),
+            'compliance_12m_all': metrics.get('compliance_12m_all', []),
+            'compliance_12m_top20': metrics.get('compliance_12m_top20', [])
         }
     except Exception as e:
         print(f"[ERROR] Index: {e}")
@@ -230,7 +236,9 @@ def upload_files():
                 'hours_28day': item.get('hours_28day', 0),
                 'hours_12month': item.get('hours_12month', 0),
                 'percentage': item.get('percentage', 0),
-                'status': item.get('status', 'normal')
+                'percentage_12m': item.get('percentage_12m', 0),
+                'status': item.get('status', 'normal'),
+                'status_12m': item.get('status_12m', 'normal')
             } for item in processor.rolling_hours]
             if hours_data:
                 res = db.insert_rolling_hours(hours_data)
