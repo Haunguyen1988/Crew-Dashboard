@@ -971,8 +971,22 @@
             <div class="card metric-card">
                 <div class="metric-value">{{ data.summary.total_flights }}</div>
                 <div class="metric-label">Total Flights</div>
-                <span class="metric-trend up">▲ +12% vs yesterday</span>
+                {% if data.flight_trend and data.flight_trend.has_data %}
+                {% if data.flight_trend.direction == 'up' %}
+                <span class="metric-trend up">▲ +{{ data.flight_trend.value }}% vs yesterday</span>
+                {% elif data.flight_trend.direction == 'down' %}
+                <span class="metric-trend" style="color: var(--accent-red);">▼ -{{ data.flight_trend.value }}% vs
+                    yesterday</span>
+                {% else %}
+                <span class="metric-trend">No change vs yesterday</span>
+                {% endif %}
+                {% elif filter_date %}
+                <span class="metric-trend" style="color: var(--text-secondary);">No data for yesterday</span>
+                {% else %}
+                <span class="metric-trend" style="color: var(--text-secondary);">Select date to compare</span>
+                {% endif %}
             </div>
+
             <div class="card metric-card" onclick="openCrewOperatingModal()" style="cursor: pointer;">
                 <div class="metric-value">{{ "{:,}".format(data.summary.total_crew) }}</div>
                 <div class="metric-label">Total Crew Operating</div>

@@ -82,24 +82,40 @@ def load_supabase_data(filter_date=None):
         return get_default_data(), []
     
     try:
-        flights = db.get_flights(filter_date) or []
+        # Load ALL flights (needed for trend calculation)
+        all_flights = db.get_flights() or []  # Get ALL flights, not filtered
         available_dates = db.get_available_dates() or []
         
-        if not flights:
+        if not all_flights:
             return get_default_data(), available_dates
         
-        # 1. Process flights (Memory State Update)
-        processor.flights = flights
+        # 1. Process ALL flights (Memory State Update)
+        # Required for flight trend (today vs yesterday comparison)
+        processor.flights = all_flights
         processor.available_dates = available_dates
+        processor.flights_by_date.clear()
         processor.crew_to_regs.clear()
         processor.reg_flight_hours.clear()
         processor.reg_flight_count.clear()
+        processor.reg_flight_hours_by_date.clear()
+        processor.reg_flight_count_by_date.clear()
         
-        for flight in flights:
+        from collections import defaultdict
+        processor.flights_by_date = defaultdict(list)
+        processor.reg_flight_hours_by_date = defaultdict(lambda: defaultdict(float))
+        processor.reg_flight_count_by_date = defaultdict(lambda: defaultdict(int))
+        processor.crew_to_regs_by_date = defaultdict(lambda: defaultdict(set))
+        
+        for flight in all_flights:
             try:
+                op_date = flight.get('date', '')
                 reg = flight.get('reg', '')
                 std, sta = flight.get('std', ''), flight.get('sta', '')
                 crew_string = flight.get('crew', '')
+                
+                # Group flights by date (critical for trend calculation)
+                if op_date:
+                    processor.flights_by_date[op_date].append(flight)
                 
                 if std and sta and ':' in str(std) and ':' in str(sta):
                     std_min = int(str(std).split(':')[0]) * 60 + int(str(std).split(':')[1])
@@ -108,14 +124,22 @@ def load_supabase_data(filter_date=None):
                     if duration < 0: duration += 24 * 60
                     processor.reg_flight_hours[reg] += duration / 60
                     processor.reg_flight_count[reg] += 1
+                    if op_date:
+                        processor.reg_flight_hours_by_date[op_date][reg] += duration / 60
+                        processor.reg_flight_count_by_date[op_date][reg] += 1
                 
                 if crew_string:
                     for role, crew_id in re.findall(r'\(([A-Z]{2})\)\s*(\d+)', str(crew_string)):
                         processor.crew_to_regs[crew_id].add(reg)
                         processor.crew_roles[crew_id] = role
+                        if op_date:
+                            processor.crew_to_regs_by_date[op_date][crew_id].add(reg)
             except:
                 continue
+        
+        print(f"[INFO] Loaded {len(all_flights)} flights across {len(processor.flights_by_date)} dates")
                 
+
         # 2. Populate Rolling Hours from DB (Critical for calculate_metrics)
         try:
             raw_rolling = db.get_rolling_hours() or []
@@ -130,16 +154,37 @@ def load_supabase_data(filter_date=None):
             
         except Exception as e:
             print(f"[WARN] Failed to load rolling hours: {e}")
+        
+        # 2.5 Populate Standby Records from DB (Required for crew_schedule date filtering)
+        try:
+            db_standby = db.get_standby_records() or []
+            processor.standby_records = []
+            for item in db_standby:
+                processor.standby_records.append({
+                    'crew_id': item.get('crew_id', ''),
+                    'name': item.get('name', ''),
+                    'base': item.get('base', ''),
+                    'status_type': item.get('status_type', ''),
+                    'start_date': item.get('start_date', ''),
+                    'end_date': item.get('end_date', '')
+                })
+            print(f"[INFO] Loaded {len(processor.standby_records)} standby records from DB")
+        except Exception as e:
+            print(f"[WARN] Failed to load standby records: {e}")
 
         # 3. Calculate Metrics (Now uses populated flight & rolling data)
+        # NOTE: calculate_metrics() already handles crew_schedule with proper date filtering
+        #       using standby_records. Do NOT override here.
         metrics = processor.calculate_metrics(filter_date)
         
-        # 4. Add additional DB-only data (Schedule Summary)
-        try:
-            summary_data = db.get_crew_schedule_summary(filter_date) or {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
-            metrics['crew_schedule'] = {'summary': summary_data}
-        except Exception as e:
-             print(f"[WARN] Failed to load schedule: {e}")
+        # REMOVED: Old logic that overrode crew_schedule and broke date filtering
+        # try:
+        #     summary_data = db.get_crew_schedule_summary(filter_date) or {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
+        #     metrics['crew_schedule'] = {'summary': summary_data}
+        # except Exception as e:
+        #      print(f"[WARN] Failed to load schedule: {e}")
+        
+
         
         return metrics, available_dates
     except Exception as e:
@@ -172,6 +217,7 @@ def index():
             'rolling_stats': metrics.get('rolling_stats', data['rolling_stats']),
             'rolling_stats_12m': metrics.get('rolling_stats_12m', {'normal': 0, 'warning': 0, 'critical': 0}),
             'crew_schedule': metrics.get('crew_schedule', data['crew_schedule']),
+            'flight_trend': metrics.get('flight_trend', {'value': 0, 'direction': 'neutral', 'has_data': False}),  # NEW
             
             # Pass compliance lists
             'compliance_28d_all': metrics.get('compliance_28d_all', []),
@@ -179,6 +225,7 @@ def index():
             'compliance_12m_all': metrics.get('compliance_12m_all', []),
             'compliance_12m_top20': metrics.get('compliance_12m_top20', [])
         }
+
     except Exception as e:
         print(f"[ERROR] Index: {e}")
         traceback.print_exc()

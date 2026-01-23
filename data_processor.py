@@ -1460,7 +1460,32 @@ class DataProcessor:
         rolling_stats_12m = {'normal': 0, 'warning': 0, 'critical': 0}
         for crew in self.rolling_hours:
             rolling_stats_12m[crew.get('status_12m', 'normal')] += 1
+        
+        # Calculate flight trend (today vs yesterday)
+        flight_trend = {'value': 0, 'direction': 'neutral', 'has_data': False}
+        if lookup_date:
+            today_flights = len(flights)
             
+            # Find yesterday in DD/MM/YY format
+            try:
+                from datetime import timedelta
+                date_obj = datetime.strptime(lookup_date, '%d/%m/%y')
+                yesterday_obj = date_obj - timedelta(days=1)
+                yesterday_str = yesterday_obj.strftime('%d/%m/%y')
+                
+                yesterday_flights = len(self.flights_by_date.get(yesterday_str, []))
+                
+                if yesterday_flights > 0:
+                    change = ((today_flights - yesterday_flights) / yesterday_flights) * 100
+                    flight_trend['value'] = round(abs(change), 1)
+                    flight_trend['direction'] = 'up' if change > 0 else 'down' if change < 0 else 'neutral'
+                    flight_trend['has_data'] = True
+                    flight_trend['yesterday_count'] = yesterday_flights
+                    print(f"DEBUG: Flight trend - today: {today_flights}, yesterday: {yesterday_flights}, change: {change:.1f}%")
+            except Exception as e:
+                print(f"Error calculating flight trend: {e}")
+            
+
         # Build Data Dict
         data = {
             'summary': {
@@ -1487,9 +1512,11 @@ class DataProcessor:
             
             'rolling_stats': rolling_stats,
             'rolling_stats_12m': rolling_stats_12m,
+            'flight_trend': flight_trend,  # NEW: Flight trend vs yesterday
             'crew_schedule': self.crew_schedule.copy() if isinstance(self.crew_schedule, dict) else {'summary': {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}},
             'last_updated': datetime.now().isoformat()
         }
+
         
         # Override crew schedule summary if filtered by date
         # NEW LOGIC: Use standby_records with date range filtering
