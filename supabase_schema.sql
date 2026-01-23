@@ -73,6 +73,24 @@ CREATE TABLE IF NOT EXISTS crew_schedule (
 CREATE INDEX IF NOT EXISTS idx_crew_sched_date ON crew_schedule(date);
 CREATE INDEX IF NOT EXISTS idx_crew_sched_status ON crew_schedule(status_type);
 
+-- 5. STANDBY RECORDS TABLE (individual crew with date ranges)
+CREATE TABLE IF NOT EXISTS standby_records (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    crew_id TEXT NOT NULL,
+    name TEXT,
+    base TEXT,
+    status_type TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(crew_id, status_type, start_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_standby_crew ON standby_records(crew_id);
+CREATE INDEX IF NOT EXISTS idx_standby_start ON standby_records(start_date);
+CREATE INDEX IF NOT EXISTS idx_standby_end ON standby_records(end_date);
+CREATE INDEX IF NOT EXISTS idx_standby_status ON standby_records(status_type);
+
 -- =====================================================
 -- ENABLE ROW LEVEL SECURITY (RLS) - Set to allow all for now
 -- =====================================================
@@ -81,6 +99,7 @@ ALTER TABLE flights ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ac_utilization ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rolling_hours ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crew_schedule ENABLE ROW LEVEL SECURITY;
+ALTER TABLE standby_records ENABLE ROW LEVEL SECURITY;
 
 -- Create policies to allow anonymous access (for demo purposes)
 -- Create policies to allow anonymous access (for demo purposes)
@@ -96,6 +115,9 @@ CREATE POLICY "Allow all access to rolling_hours" ON rolling_hours FOR ALL USING
 
 DROP POLICY IF EXISTS "Allow all access to crew_schedule" ON crew_schedule;
 CREATE POLICY "Allow all access to crew_schedule" ON crew_schedule FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all access to standby_records" ON standby_records;
+CREATE POLICY "Allow all access to standby_records" ON standby_records FOR ALL USING (true) WITH CHECK (true);
 
 -- =====================================================
 -- VERIFY TABLES CREATED

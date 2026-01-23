@@ -282,6 +282,64 @@ def get_crew_schedule_summary(filter_date: str = None):
     return summary
 
 
+# ==================== STANDBY RECORDS TABLE ====================
+
+def upsert_standby_records(records: list):
+    """Upsert standby records from Crew Schedule CSV
+    Uses crew_id + status_type + start_date as unique key
+    """
+    client = get_client()
+    if not client or not records:
+        return None
+    
+    try:
+        # Clear existing data before insert for full refresh
+        client.table('standby_records').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        
+        # Insert in batches
+        batch_size = 500
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i+batch_size]
+            client.table('standby_records').insert(batch).execute()
+        
+        return len(records)
+    except Exception as e:
+        print(f"Error upserting standby records: {e}")
+        return None
+
+def get_standby_records(filter_date: str = None):
+    """Get standby records, filtered by date range
+    
+    Filter logic: filter_date >= start_date AND filter_date <= end_date
+    This ensures multi-day duties appear for each day they cover
+    """
+    client = get_client()
+    if not client:
+        return []
+    
+    try:
+        query = client.table('standby_records').select('*')
+        
+        if filter_date:
+            # Filter: start_date <= filter_date AND end_date >= filter_date
+            query = query.lte('start_date', filter_date).gte('end_date', filter_date)
+        
+        return _fetch_all(query)
+    except Exception as e:
+        print(f"Error getting standby records: {e}")
+        return []
+
+def get_standby_summary(filter_date: str = None):
+    """Get summary counts of standby statuses filtered by date range"""
+    data = get_standby_records(filter_date)
+    summary = {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
+    for record in data:
+        status = record.get('status_type', '')
+        if status in summary:
+            summary[status] += 1
+    return summary
+
+
 # ==================== UTILITY FUNCTIONS ====================
 
 def check_connection():

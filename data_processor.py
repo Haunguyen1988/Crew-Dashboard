@@ -42,6 +42,9 @@ class DataProcessor:
         self.crew_group_rotations = defaultdict(list)  # crew_set -> list of REGs
         self.crew_group_rotations_by_date = defaultdict(lambda: defaultdict(list))  # date -> crew_set_key -> list of REGs
         
+        # Standby records with date ranges for proper filtering
+        self.standby_records = []  # List of {crew_id, name, base, status_type, start_date, end_date}
+        
         # Optimization maps
         self.crew_name_map = {}
         self.reg_types = {}
@@ -160,7 +163,7 @@ class DataProcessor:
                 })
             print(f"Loaded {len(self.rolling_hours)} rolling hour records")
 
-        # 4. Crew Schedule
+        # 4. Crew Schedule (legacy aggregate)
         db_schedule = db.get_crew_schedule()
         if db_schedule:
              self.crew_schedule_by_date = defaultdict(lambda: {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0})
@@ -173,6 +176,21 @@ class DataProcessor:
                  if s:
                      self.crew_schedule['summary'][s] += 1
              print(f"Loaded Crew Schedule from Supabase")
+        
+        # 5. Standby Records (individual crew with date ranges)
+        db_standby = db.get_standby_records()
+        if db_standby:
+            self.standby_records = []
+            for item in db_standby:
+                self.standby_records.append({
+                    'crew_id': item.get('crew_id', ''),
+                    'name': item.get('name', ''),
+                    'base': item.get('base', ''),
+                    'status_type': item.get('status_type', ''),
+                    'start_date': item.get('start_date', ''),
+                    'end_date': item.get('end_date', '')
+                })
+            print(f"Loaded {len(self.standby_records)} standby records for date filtering")
         
     def _read_file_safe(self, file_path):
         """Read file with encoding fallback (utf-8 -> cp1252 -> latin1)"""
@@ -956,6 +974,7 @@ class DataProcessor:
         # Reset data
         self.crew_schedule['summary'] = {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
         self.crew_schedule_by_date.clear()
+        self.standby_records = []  # Reset individual crew records with date ranges
         
         # Read CSV with header detection
         rows = list(csv.reader(content.splitlines()))
@@ -1108,35 +1127,59 @@ class DataProcessor:
             else:
                  continue
 
+            # Get crew name and base if available
+            crew_name = ''
+            crew_base = ''
+            if 'name' in header_map and header_map['name'] < len(row):
+                crew_name = row[header_map['name']].strip()
+            if 'base' in header_map and header_map['base'] < len(row):
+                crew_base = row[header_map['base']].strip()
+            # Extract base from Base/Ac/Pos column like "SGN 320 CP"
+            if not crew_base and crew_name:
+                # Try to extract base from combined column
+                for col_val in row:
+                    if any(b in col_val.upper() for b in ['SGN', 'HAN', 'DAD', 'CXR']):
+                        parts = col_val.strip().split()
+                        if parts:
+                            crew_base = parts[0].upper()
+                        break
+
             if is_matrix:
-                # MATRIX MODE parsing
+                # MATRIX MODE parsing - each date column represents a day
                 try:
-                     # Iterate over date columns
                      for col_idx, date_str in date_cols.items():
                          if col_idx < len(row):
                              val = row[col_idx].strip().upper()
                              if not val: continue
                              
-                             if 'SBY' in val:
-                                 self.crew_schedule_by_date[date_str]['SBY'] += 1
-                                 self.crew_schedule['summary']['SBY'] += 1
-                             elif 'SL' in val:
-                                 self.crew_schedule_by_date[date_str]['SL'] += 1
-                                 self.crew_schedule['summary']['SL'] += 1
+                             status_type = None
+                             if 'OSBY' in val:
+                                 status_type = 'OSBY'
+                             elif 'SBY' in val:
+                                 status_type = 'SBY'
                              elif 'CSL' in val:
-                                 self.crew_schedule_by_date[date_str]['CSL'] += 1
-                                 self.crew_schedule['summary']['CSL'] += 1
-                             elif 'OSBY' in val:
-                                 self.crew_schedule_by_date[date_str]['OSBY'] += 1
-                                 self.crew_schedule['summary']['OSBY'] += 1
+                                 status_type = 'CSL'
+                             elif 'SL' in val:
+                                 status_type = 'SL'
+                             
+                             if status_type:
+                                 self.crew_schedule_by_date[date_str][status_type] += 1
+                                 self.crew_schedule['summary'][status_type] += 1
+                                 
+                                 # Store individual record (date is both start and end for single day)
+                                 self.standby_records.append({
+                                     'crew_id': crew_id,
+                                     'name': crew_name,
+                                     'base': crew_base,
+                                     'status_type': status_type,
+                                     'start_date': date_str,
+                                     'end_date': date_str
+                                 })
                 except:
                     continue
             else:
                 # STANDARD LIST MODE parsing
                 try:
-                    crew_data = {}
-                    # Basic info (optional for summary but good for lists)
-                    
                     # Helper to get value
                     def get_value(key):
                         if key in header_map and header_map[key] < len(row):
@@ -1148,53 +1191,49 @@ class DataProcessor:
                     csl_val = get_value('csl')
                     sby_val = get_value('sby')
                     osby_val = get_value('osby')
-
-                    if sl_val > 0:
-                        self.crew_schedule['summary']['SL'] += sl_val
-                        if current_report_date:
-                            self.crew_schedule_by_date[current_report_date]['SL'] += sl_val
-                            
-                    if csl_val > 0:
-                        self.crew_schedule['summary']['CSL'] += csl_val
-                        if current_report_date:
-                            self.crew_schedule_by_date[current_report_date]['CSL'] += csl_val
-
-                    if sby_val > 0:
-                        self.crew_schedule['summary']['SBY'] += sby_val
-                        if current_report_date:
-                            self.crew_schedule_by_date[current_report_date]['SBY'] += sby_val
-
-                    if osby_val > 0:
-                        self.crew_schedule['summary']['OSBY'] += osby_val
-                        if current_report_date:
-                            self.crew_schedule_by_date[current_report_date]['OSBY'] += osby_val
+                    
+                    # Determine primary status type for this crew member
+                    # Store as individual record with the report date
+                    for status_type, val in [('SL', sl_val), ('CSL', csl_val), ('SBY', sby_val), ('OSBY', osby_val)]:
+                        if val > 0:
+                            self.crew_schedule['summary'][status_type] += val
+                            if current_report_date:
+                                self.crew_schedule_by_date[current_report_date][status_type] += val
+                                
+                                # Store individual record
+                                self.standby_records.append({
+                                    'crew_id': crew_id,
+                                    'name': crew_name,
+                                    'base': crew_base,
+                                    'status_type': status_type,
+                                    'start_date': current_report_date,
+                                    'end_date': current_report_date
+                                })
                     
                 except Exception:
                     continue
 
-        # INSERT TO SUPABASE
-        if sync_db and db.is_connected() and (self.crew_schedule_by_date or self.crew_schedule['summary']):
-            print("syncing crew_schedule to supabase...")
-            schedule_data = []
-            # Note: insert_crew_schedule expects flat list.
-            # If we parsed matrix, we have dates. If we parsed summary, we might not have dates (empty date_str).
-            # Let's handle both.
+        # SYNC TO SUPABASE
+        if sync_db and db.is_connected():
+            # Sync legacy crew_schedule table (for backward compatibility)
+            if self.crew_schedule_by_date or self.crew_schedule['summary']:
+                print("syncing crew_schedule to supabase...")
+                schedule_data = []
+                for date_str, counts in self.crew_schedule_by_date.items():
+                    for status_type in ['SL', 'CSL', 'SBY', 'OSBY']:
+                        count = counts.get(status_type, 0)
+                        for _ in range(count):
+                            schedule_data.append({
+                                'date': date_str,
+                                'status_type': status_type
+                            })
+                if schedule_data:
+                    db.insert_crew_schedule(schedule_data)
             
-            for date_str, counts in self.crew_schedule_by_date.items():
-                for status_type in ['SL', 'CSL', 'SBY', 'OSBY']:
-                    count = counts.get(status_type, 0)
-                    for _ in range(count):
-                        schedule_data.append({
-                            'date': date_str,
-                            'status_type': status_type
-                        })
-            
-            # If we rely ONLY on summary (no date parsed), we can't really insert individual rows with date.
-            # But the user logic in test_supabase.py used crew_schedule_by_date.
-            # If logic only populated summary, schedule_data might be empty.
-            
-            if schedule_data:
-                db.insert_crew_schedule(schedule_data)
+            # Sync new standby_records table (individual crew with date ranges)
+            if self.standby_records:
+                print(f"syncing {len(self.standby_records)} standby_records to supabase...")
+                db.upsert_standby_records(self.standby_records)
 
         return sum(self.crew_schedule['summary'].values())
 
@@ -1453,15 +1492,50 @@ class DataProcessor:
         }
         
         # Override crew schedule summary if filtered by date
-        if lookup_date:
-            print(f"DEBUG: Available Keys: {list(self.crew_schedule_by_date.keys())}")
+        # NEW LOGIC: Use standby_records with date range filtering
+        # Filter_Date >= Start_Date AND Filter_Date <= End_Date
+        if lookup_date and self.standby_records:
+            print(f"DEBUG: Filtering {len(self.standby_records)} standby_records for date: {lookup_date}")
             
-        if lookup_date and lookup_date in self.crew_schedule_by_date:
+            # Helper to compare dates in DD/MM/YY format
+            def parse_date_tuple(date_str):
+                try:
+                    parts = date_str.split('/')
+                    day = int(parts[0])
+                    month = int(parts[1])
+                    year = int(parts[2]) + 2000 if int(parts[2]) < 100 else int(parts[2])
+                    return (year, month, day)
+                except:
+                    return (9999, 99, 99)
+            
+            filter_tuple = parse_date_tuple(lookup_date)
+            
+            # Filter records where filter_date is within [start_date, end_date]
+            filtered_records = []
+            for record in self.standby_records:
+                start_tuple = parse_date_tuple(record.get('start_date', ''))
+                end_tuple = parse_date_tuple(record.get('end_date', ''))
+                # check: start_date <= filter_date <= end_date
+                if start_tuple <= filter_tuple <= end_tuple:
+                    filtered_records.append(record)
+            
+            # Calculate summary from filtered records
+            filtered_summary = {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
+            for record in filtered_records:
+                status = record.get('status_type', '')
+                if status in filtered_summary:
+                    filtered_summary[status] += 1
+            
+            data['crew_schedule']['summary'] = filtered_summary
+            data['standby_records_filtered'] = filtered_records  # Include filtered list for UI
+            print(f"DEBUG: Filtered standby summary: {filtered_summary} ({len(filtered_records)} records)")
+        
+        elif lookup_date and lookup_date in self.crew_schedule_by_date:
+            # Fallback to legacy logic if no standby_records
             daily_stats = self.crew_schedule_by_date[lookup_date]
-            # Verify if this date actually has data (non-zero)
             if sum(daily_stats.values()) > 0:
                 data['crew_schedule']['summary'] = daily_stats
-                print(f"DEBUG: Overrode summary with: {daily_stats}")
+                print(f"DEBUG: Using legacy filter with: {daily_stats}")
         
         # FINAL SAFETY CHECK: Ensure summary exists
         if 'summary' not in data['crew_schedule']:
