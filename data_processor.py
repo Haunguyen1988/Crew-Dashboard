@@ -191,6 +191,25 @@ class DataProcessor:
                     'end_date': item.get('end_date', '')
                 })
             print(f"Loaded {len(self.standby_records)} standby records for date filtering")
+        elif db_schedule:
+            # FALLBACK: Reconstruct standby_records from crew_schedule when standby_records table is empty
+            # This allows date filtering to work using the legacy crew_schedule data
+            print("standby_records table is empty, reconstructing from crew_schedule...")
+            self.standby_records = []
+            for item in db_schedule:
+                d = item.get('date')
+                s = item.get('status_type')
+                if d and s:
+                    # Each crew_schedule record represents one count for that date
+                    self.standby_records.append({
+                        'crew_id': item.get('crew_id', 'unknown'),
+                        'name': '',
+                        'base': '',
+                        'status_type': s,
+                        'start_date': d,
+                        'end_date': d
+                    })
+            print(f"Reconstructed {len(self.standby_records)} standby records from crew_schedule")
         
     def _read_file_safe(self, file_path):
         """Read file with encoding fallback (utf-8 -> cp1252 -> latin1)"""
@@ -986,37 +1005,60 @@ class DataProcessor:
         date_cols = {}  # col_idx -> date_str (DD/MM/YY)
         report_month = datetime.now().month
         report_year = datetime.now().year
+        found_year_from_report_date = False  # Track if we found year from report gen date
         
         # 1. Try to detect Report Month/Year from first few lines
-        # PRIORITY 1: Look for "Period: DD/MM/YYYY-DD/MM/YYYY" format
+        # PRIORITY 1: Look for "Mon, DD Mon YYYY" format (e.g., "Wed, 21 Jan 2026")
+        # This is the report generation date - use YEAR from here (more reliable)
         for i in range(min(5, len(rows))):
             line_str = ",".join(rows[i])
-            # Match "Period: 20/01/2025-31/01/2025" or similar
-            period_match = re.search(r'Period:\s*(\d{1,2})/(\d{1,2})/(\d{4})', line_str)
+            date_match = re.search(r'(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})', line_str)
+            if date_match:
+                try:
+                    d_day, d_month_str, d_year = date_match.groups()
+                    report_year = int(d_year)
+                    found_year_from_report_date = True
+                    print(f"DEBUG: Extracted year from report date: {d_year}")
+                    break
+                except:
+                    pass
+        
+        # PRIORITY 2: Look for "Period: DD/MM/YYYY-DD/MM/YYYY" format to get the MONTH
+        # (the year in Period may be wrong/typo, so we only use MONTH from here)
+        found_month_from_period = False
+        for i in range(min(5, len(rows))):
+            line_str = ",".join(rows[i])
+            # Relaxed regex: allow any chars between Period and date (e.g. "Period: " or "Period ")
+            period_match = re.search(r'Period.*(\d{1,2})/(\d{1,2})/(\d{4})', line_str)
             if period_match:
                 try:
                     p_day, p_month, p_year = period_match.groups()
                     report_month = int(p_month)
-                    report_year = int(p_year)
-                    print(f"DEBUG: Extracted period from header: month={report_month}, year={report_year}")
+                    found_month_from_period = True
+                    # Only use year from Period if we didn't find it from report date
+                    if not found_year_from_report_date:
+                        report_year = int(p_year)
+                    print(f"DEBUG: Found Period date: {p_day}/{p_month}/{p_year} -> Month={report_month}, Year={report_year}")
+                    print(f"DEBUG: Line content: {line_str}")
                     break
                 except:
                     pass
-        else:
-            # PRIORITY 2: Fallback to "Mon, 19 Jan 2026" format
-            for i in range(min(5, len(rows))):
-                line_str = ",".join(rows[i])
-                date_match = re.search(r'(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})', line_str)
-                if date_match:
-                    try:
-                        d_day, d_month_str, d_year = date_match.groups()
-                        d_month = datetime.strptime(d_month_str, "%b").month
-                        report_year = int(d_year)
-                        report_month = int(d_month)
-                        print(f"DEBUG: Fallback date extraction: month={report_month}, year={report_year}")
+        
+        # PRIORITY 3: Look for Month Name in the header rows (e.g., "Total,Feb")
+        # As fallback OR override (header columns are authoritative)
+        found_month_name = False
+        for i in range(min(5, len(rows))):
+            for cell in rows[i]:
+                clean_cell = cell.strip().title()
+                # Check for "Feb", "Feb.", "February"
+                for m_idx, m_name in enumerate(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']):
+                    if clean_cell == m_name or clean_cell == m_name + '.':
+                        report_month = m_idx + 1
+                        print(f"DEBUG: Found month name '{clean_cell}' in header: month={report_month} (Overrides any previous)")
+                        found_month_name = True
                         break
-                    except:
-                        pass
+                if found_month_name: break
+            if found_month_name: break
 
         # 2. Detect columns (Standard vs Matrix)
         is_matrix = False
@@ -1582,10 +1624,10 @@ class DataProcessor:
                 print(f"DEBUG: Using legacy filter with: {daily_stats}")
         
         elif lookup_date:
-            # NEW FALLBACK: When date filter is applied but NO date-specific standby data exists,
-            # keep the TOTAL summary (instead of showing 0)
-            # This handles cases where standby CSV only has data for different months
-            print(f"DEBUG: No standby data for {lookup_date}, keeping total summary: {data['crew_schedule']['summary']}")
+            # When date filter is applied but NO date-specific standby data exists,
+            # show 0 (no data for that date) instead of confusing global totals
+            print(f"DEBUG: No standby data for {lookup_date}, resetting to 0")
+            data['crew_schedule']['summary'] = {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
         
         # FINAL SAFETY CHECK: Ensure summary exists
         if 'summary' not in data['crew_schedule']:
