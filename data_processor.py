@@ -987,19 +987,36 @@ class DataProcessor:
         report_month = datetime.now().month
         report_year = datetime.now().year
         
-        # 1. Try to detect Report Month/Year from first few lines (e.g. "Mon, 19 Jan 2026")
+        # 1. Try to detect Report Month/Year from first few lines
+        # PRIORITY 1: Look for "Period: DD/MM/YYYY-DD/MM/YYYY" format
         for i in range(min(5, len(rows))):
             line_str = ",".join(rows[i])
-            date_match = re.search(r'(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})', line_str)
-            if date_match:
+            # Match "Period: 20/01/2025-31/01/2025" or similar
+            period_match = re.search(r'Period:\s*(\d{1,2})/(\d{1,2})/(\d{4})', line_str)
+            if period_match:
                 try:
-                    d_day, d_month_str, d_year = date_match.groups()
-                    d_month = datetime.strptime(d_month_str, "%b").month
-                    report_year = int(d_year)
-                    report_month = int(d_month) # Use report month
+                    p_day, p_month, p_year = period_match.groups()
+                    report_month = int(p_month)
+                    report_year = int(p_year)
+                    print(f"DEBUG: Extracted period from header: month={report_month}, year={report_year}")
                     break
                 except:
                     pass
+        else:
+            # PRIORITY 2: Fallback to "Mon, 19 Jan 2026" format
+            for i in range(min(5, len(rows))):
+                line_str = ",".join(rows[i])
+                date_match = re.search(r'(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})', line_str)
+                if date_match:
+                    try:
+                        d_day, d_month_str, d_year = date_match.groups()
+                        d_month = datetime.strptime(d_month_str, "%b").month
+                        report_year = int(d_year)
+                        report_month = int(d_month)
+                        print(f"DEBUG: Fallback date extraction: month={report_month}, year={report_year}")
+                        break
+                    except:
+                        pass
 
         # 2. Detect columns (Standard vs Matrix)
         is_matrix = False
@@ -1564,10 +1581,17 @@ class DataProcessor:
                 data['crew_schedule']['summary'] = daily_stats
                 print(f"DEBUG: Using legacy filter with: {daily_stats}")
         
+        elif lookup_date:
+            # NEW FALLBACK: When date filter is applied but NO date-specific standby data exists,
+            # keep the TOTAL summary (instead of showing 0)
+            # This handles cases where standby CSV only has data for different months
+            print(f"DEBUG: No standby data for {lookup_date}, keeping total summary: {data['crew_schedule']['summary']}")
+        
         # FINAL SAFETY CHECK: Ensure summary exists
         if 'summary' not in data['crew_schedule']:
             data['crew_schedule']['summary'] = {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
         
+
         return data
     
     def get_dashboard_data(self, filter_date=None):
