@@ -246,72 +246,32 @@ def upload_files():
         if 'dayrep' in request.files and request.files['dayrep'].filename:
             f = request.files['dayrep']
             content = f.read()
-            count = processor.process_dayrep_csv(file_path=f.filename, file_content=content, sync_db=False)
-            res = db.insert_flights([{
-                'date': f.get('date', ''), 'calendar_date': f.get('calendar_date', ''),
-                'reg': f.get('reg', ''), 'flt': f.get('flt', ''),
-                'dep': f.get('dep', ''), 'arr': f.get('arr', ''),
-                'std': f.get('std', ''), 'sta': f.get('sta', ''),
-                'crew': f.get('crew', '')
-            } for f in processor.flights])
-            if res is None: raise Exception("Failed to insert flights to DB. Check RLS policies.")
+            # Use sync_db=True to let processor handle DB insertion
+            res = processor.process_dayrep_csv(file_path=f.filename, file_content=content, sync_db=True)
+            print(f"[UPLOAD] Processed dayrep: {res} records")
 
         if 'sacutil' in request.files and request.files['sacutil'].filename:
             f = request.files['sacutil']
             content = f.read()
-            processor.process_sacutil_csv(file_path=f.filename, file_content=content, sync_db=False)
-            util_data = []
-            for date_str, ac_types in processor.ac_utilization_by_date.items():
-                for ac_type, stats in ac_types.items():
-                    util_data.append({
-                        'date': date_str, 'ac_type': ac_type,
-                        'dom_block': stats.get('dom_block', '00:00'),
-                        'int_block': stats.get('int_block', '00:00'),
-                        'total_block': stats.get('total_block', '00:00'),
-                        'dom_cycles': int(stats.get('dom_cycles', 0) or 0),
-                        'int_cycles': int(stats.get('int_cycles', 0) or 0),
-                        'total_cycles': int(stats.get('total_cycles', 0) or 0),
-                        'avg_util': stats.get('avg_util', '')
-                    })
-            if util_data:
-                res = db.insert_ac_utilization(util_data)
-                if res is None: raise Exception("Failed to insert AC util to DB.")
+            res = processor.process_sacutil_csv(file_path=f.filename, file_content=content, sync_db=True)
+            print(f"[UPLOAD] Processed sacutil: {res} records")
         
         if 'rolcrtot' in request.files and request.files['rolcrtot'].filename:
             f = request.files['rolcrtot']
             content = f.read()
-            processor.process_rolcrtot_csv(file_path=f.filename, file_content=content, sync_db=False)
-            hours_data = [{
-                'crew_id': item.get('id', ''), 'name': item.get('name', ''),
-                'seniority': item.get('seniority', ''),
-                'block_28day': item.get('block_28day', '0:00'),
-                'block_12month': item.get('block_12month', '0:00'),
-                'hours_28day': item.get('hours_28day', 0),
-                'hours_12month': item.get('hours_12month', 0),
-                'percentage': item.get('percentage', 0),
-                'percentage_12m': item.get('percentage_12m', 0),
-                'status': item.get('status', 'normal'),
-                'status_12m': item.get('status_12m', 'normal')
-            } for item in processor.rolling_hours]
-            if hours_data:
-                res = db.insert_rolling_hours(hours_data)
-                if res is None: raise Exception("Failed to insert rolling hours to DB.")
+            res = processor.process_rolcrtot_csv(file_path=f.filename, file_content=content, sync_db=True)
+            print(f"[UPLOAD] Processed rolcrtot: {res} records")
         
         if 'crew_schedule' in request.files and request.files['crew_schedule'].filename:
             f = request.files['crew_schedule']
             content = f.read()
-            processor.process_crew_schedule_csv(file_path=f.filename, file_content=content, sync_db=False)
-            schedule_data = []
-            for date_str, counts in processor.crew_schedule_by_date.items():
-                for status_type in ['SL', 'CSL', 'SBY', 'OSBY']:
-                    for _ in range(counts.get(status_type, 0)):
-                        schedule_data.append({'date': date_str, 'status_type': status_type})
-            if schedule_data:
-                res = db.insert_crew_schedule(schedule_data)
-                if res is None: raise Exception("Failed to insert crew schedule to DB.")
+            res = processor.process_crew_schedule_csv(file_path=f.filename, file_content=content, sync_db=True)
+            print(f"[UPLOAD] Processed crew_schedule: {res} records")
         
-        flash('Data uploaded successfully!')
+        flash('Data uploaded and synced successfully!')
     except Exception as e:
+        print(f"[ERROR] Upload failed: {e}")
+        traceback.print_exc()
         flash(f'Upload error: {str(e)}')
     
     return redirect(url_for('index'))
