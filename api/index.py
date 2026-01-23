@@ -45,193 +45,78 @@ else:
     print("[INFO] Supabase credentials not set - using local files")
 
 
-# ==================== DEFAULT DATA ====================
-def get_default_data():
-    return {
-        'summary': {
-            'total_aircraft': 0, 'total_flights': 0, 'total_crew': 0,
-            'avg_flight_hours': 0, 'total_block_hours': 0, 'crew_rotation_count': 0,
-            'crew_by_role': {'CP': 0, 'FO': 0, 'PU': 0, 'FA': 0}
-        },
-        'aircraft': [], 'crew_roles': {'CP': 0, 'FO': 0, 'PU': 0, 'FA': 0},
-        'crew_rotations': [], 'available_dates': [], 'operating_crew': [],
-        'utilization': {}, 'rolling_hours': [],
-        'rolling_stats': {'normal': 0, 'warning': 0, 'critical': 0, 'total': 0},
-        'crew_schedule': {'summary': {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}}
-    }
 
+# ==================== DATA LOADING HELPERS ====================
 
-def load_local_data():
-    """Load data from local CSV files"""
+def ensure_data_loaded():
+    """Ensure processor has data loaded (from Supabase or Local)"""
     if not processor:
-        return get_default_data(), []
-    try:
-        processor.process_dayrep_csv()
-        processor.process_sacutil_csv()
-        processor.process_rolcrtot_csv()
-        processor.process_crew_schedule_csv()
-        return processor.calculate_metrics(None), processor.available_dates
-    except Exception as e:
-        print(f"[ERROR] Load local data: {e}")
-        return get_default_data(), []
+        return
 
-
-def load_supabase_data(filter_date=None):
-    """Load data from Supabase"""
-    if not db or not supabase_connected or not processor:
-        return get_default_data(), []
-    
-    try:
-        # Load ALL flights (needed for trend calculation)
-        all_flights = db.get_flights() or []  # Get ALL flights, not filtered
-        available_dates = db.get_available_dates() or []
-        
-        if not all_flights:
-            return get_default_data(), available_dates
-        
-        # 1. Process ALL flights (Memory State Update)
-        # Required for flight trend (today vs yesterday comparison)
-        processor.flights = all_flights
-        processor.available_dates = available_dates
-        processor.flights_by_date.clear()
-        processor.crew_to_regs.clear()
-        processor.reg_flight_hours.clear()
-        processor.reg_flight_count.clear()
-        processor.reg_flight_hours_by_date.clear()
-        processor.reg_flight_count_by_date.clear()
-        
-        from collections import defaultdict
-        processor.flights_by_date = defaultdict(list)
-        processor.reg_flight_hours_by_date = defaultdict(lambda: defaultdict(float))
-        processor.reg_flight_count_by_date = defaultdict(lambda: defaultdict(int))
-        processor.crew_to_regs_by_date = defaultdict(lambda: defaultdict(set))
-        
-        for flight in all_flights:
-            try:
-                op_date = flight.get('date', '')
-                reg = flight.get('reg', '')
-                std, sta = flight.get('std', ''), flight.get('sta', '')
-                crew_string = flight.get('crew', '')
-                
-                # Group flights by date (critical for trend calculation)
-                if op_date:
-                    processor.flights_by_date[op_date].append(flight)
-                
-                if std and sta and ':' in str(std) and ':' in str(sta):
-                    std_min = int(str(std).split(':')[0]) * 60 + int(str(std).split(':')[1])
-                    sta_min = int(str(sta).split(':')[0]) * 60 + int(str(sta).split(':')[1])
-                    duration = sta_min - std_min
-                    if duration < 0: duration += 24 * 60
-                    processor.reg_flight_hours[reg] += duration / 60
-                    processor.reg_flight_count[reg] += 1
-                    if op_date:
-                        processor.reg_flight_hours_by_date[op_date][reg] += duration / 60
-                        processor.reg_flight_count_by_date[op_date][reg] += 1
-                
-                if crew_string:
-                    for role, crew_id in re.findall(r'\(([A-Z]{2})\)\s*(\d+)', str(crew_string)):
-                        processor.crew_to_regs[crew_id].add(reg)
-                        processor.crew_roles[crew_id] = role
-                        if op_date:
-                            processor.crew_to_regs_by_date[op_date][crew_id].add(reg)
-            except:
-                continue
-        
-        print(f"[INFO] Loaded {len(all_flights)} flights across {len(processor.flights_by_date)} dates")
-                
-
-        # 2. Populate Rolling Hours from DB (Critical for calculate_metrics)
+    if supabase_connected and db:
         try:
-            raw_rolling = db.get_rolling_hours() or []
-            # Ensure correct types if DB returns strings for numbers
-            processor.rolling_hours = []
-            for item in raw_rolling:
-                # Calculate percentages if missing (sometimes DB view differs)
-                # But mostly just pass through
-                processor.rolling_hours.append(item)
-                
-            print(f"[INFO] Loaded {len(processor.rolling_hours)} rolling records from DB")
-            
+            # Refresh data from Supabase
+            # This populates processor's internal state (flights, rolling_hours, etc.)
+            processor.load_from_supabase()
         except Exception as e:
-            print(f"[WARN] Failed to load rolling hours: {e}")
-        
-        # 2.5 Populate Standby Records from DB (Required for crew_schedule date filtering)
+            print(f"[ERROR] Supabase load failed: {e}")
+            # Fallback to local files if Supabase fails? 
+            # On Vercel local files might not exist or be stale, but worth a try
+            pass
+    else:
+        # Local mode - process files
         try:
-            db_standby = db.get_standby_records() or []
-            processor.standby_records = []
-            for item in db_standby:
-                processor.standby_records.append({
-                    'crew_id': item.get('crew_id', ''),
-                    'name': item.get('name', ''),
-                    'base': item.get('base', ''),
-                    'status_type': item.get('status_type', ''),
-                    'start_date': item.get('start_date', ''),
-                    'end_date': item.get('end_date', '')
-                })
-            print(f"[INFO] Loaded {len(processor.standby_records)} standby records from DB")
+            processor.process_dayrep_csv()
+            processor.process_sacutil_csv()
+            processor.process_rolcrtot_csv()
+            processor.process_crew_schedule_csv()
         except Exception as e:
-            print(f"[WARN] Failed to load standby records: {e}")
+            print(f"[ERROR] Local load failed: {e}")
 
-        # 3. Calculate Metrics (Now uses populated flight & rolling data)
-        # NOTE: calculate_metrics() already handles crew_schedule with proper date filtering
-        #       using standby_records. Do NOT override here.
-        metrics = processor.calculate_metrics(filter_date)
-        
-        # REMOVED: Old logic that overrode crew_schedule and broke date filtering
-        # try:
-        #     summary_data = db.get_crew_schedule_summary(filter_date) or {'SL': 0, 'CSL': 0, 'SBY': 0, 'OSBY': 0}
-        #     metrics['crew_schedule'] = {'summary': summary_data}
-        # except Exception as e:
-        #      print(f"[WARN] Failed to load schedule: {e}")
-        
-
-        
-        return metrics, available_dates
-    except Exception as e:
-        print(f"[ERROR] Supabase load: {e}")
-        return get_default_data(), []
 
 
 # ==================== ROUTES ====================
 @app.route('/')
 def index():
     filter_date = request.args.get('date')
-    data = get_default_data()
-    available_dates = []
     
-    try:
-        if supabase_connected and db:
-            metrics, available_dates = load_supabase_data(filter_date)
-        else:
-            metrics, available_dates = load_local_data()
-        
-        data = {
-            'summary': metrics.get('summary', data['summary']),
-            'aircraft': list(processor.reg_flight_hours.keys()) if processor else [],
-            'crew_roles': metrics.get('crew_roles', data['crew_roles']),
-            'crew_rotations': metrics.get('crew_rotations', []),
-            'available_dates': available_dates,
-            'operating_crew': metrics.get('operating_crew', []),
-            'utilization': metrics.get('utilization', {}),
-            'rolling_hours': metrics.get('rolling_hours', []),
-            'rolling_stats': metrics.get('rolling_stats', data['rolling_stats']),
-            'rolling_stats_12m': metrics.get('rolling_stats_12m', {'normal': 0, 'warning': 0, 'critical': 0}),
-            'crew_schedule': metrics.get('crew_schedule', data['crew_schedule']),
-            'flight_trend': metrics.get('flight_trend', {'value': 0, 'direction': 'neutral', 'has_data': False}),  # NEW
-            
-            # Pass compliance lists
-            'compliance_28d_all': metrics.get('compliance_28d_all', []),
-            'compliance_28d_top20': metrics.get('compliance_28d_top20', []),
-            'compliance_12m_all': metrics.get('compliance_12m_all', []),
-            'compliance_12m_top20': metrics.get('compliance_12m_top20', [])
-        }
+    # Check flight trend flag (experimental)
+    # processor.calculate_flight_trend = True 
 
+    try:
+        # Load/Refresh data
+        ensure_data_loaded()
+        
+        # Get Dashboard Data (Directly from processor to match local consistency)
+        if processor:
+            data = processor.get_dashboard_data(filter_date)
+            
+            # Special handling for calculating specific stats if needed
+            # (e.g. compliance rate is calculated in api_server.py but maybe not in get_dashboard_data?)
+            # In api_server.py: 
+            # compliance_stats = processor.calculate_rolling_28day_stats()
+            # data['compliance_rate'] = compliance_stats.get('compliance_rate', 100)
+            
+            compliance_stats = processor.calculate_rolling_28day_stats()
+            data['compliance_rate'] = compliance_stats.get('compliance_rate', 100)
+            
+        else:
+            data = {} # Should not happen if initialized correctly
+            
     except Exception as e:
         print(f"[ERROR] Index: {e}")
         traceback.print_exc()
+        data = {} # Fallback
+    
+    # Determine AIMS status
+    aims_enabled = False # Default to False for Vercel unless configured
     
     try:
-        return render_template('crew_dashboard.html', data=data, filter_date=filter_date, db_connected=supabase_connected)
+        return render_template('crew_dashboard.html', 
+                             data=data, 
+                             filter_date=filter_date, 
+                             db_connected=supabase_connected, 
+                             aims_enabled=aims_enabled)
     except Exception as e:
         return f"<h1>Template Error</h1><pre>{traceback.format_exc()}</pre>", 500
 
